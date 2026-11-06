@@ -1,4 +1,5 @@
 import '../lib/soukai-bis';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -19,6 +20,7 @@ import {
   prepareMessagesForModel,
   runEvalChecks,
   setAuthProvider,
+  SYSTEM_PROMPT_VERSION,
   systemPrompt,
   tools,
   type AIProvider,
@@ -50,6 +52,8 @@ const { values: flags } = parseArgs({
     model: { type: 'string' },
     'judge-model': { type: 'string' },
     'storage-root': { type: 'string' },
+    'prompt-file': { type: 'string' },
+    'prompt-append-file': { type: 'string' },
     backend: { type: 'string' },
     live: { type: 'boolean' },
     out: { type: 'string' },
@@ -96,6 +100,8 @@ Options:
   --model <id|alias>     Model to evaluate (default: case source model)
   --judge-model <id>     Model to judge with (default: same as --model)
   --storage-root <path>  Ànima storage root containing providers/ and models/
+  --prompt-file <path>   Replace the system prompt with a file
+  --prompt-append-file   Append a file to the current system prompt
   --backend <url>        Backend URL (default: http://localhost:1191)
   --out <path>           Result JSON path (default: evals/results/<id>-<timestamp>.json)
   --help                 Show this help
@@ -335,6 +341,28 @@ function extractCandidate(result: { text: string; steps: readonly { text: string
   return (stepTexts.length > 0 ? stepTexts.join('\n\n') : result.text).trim();
 }
 
+function buildPrompt(
+  caseData: AnimaEvalCase,
+  user: Parameters<typeof systemPrompt>[0]['user'],
+): { text: string; metrics: AnimaEvalCase['prompt'] } {
+  const base = systemPrompt({ user, supportsTools: caseData.supportsTools });
+  const replacement = flags['prompt-file'] ? readFileSync(resolve(process.cwd(), flags['prompt-file']), 'utf8') : base;
+  const append = flags['prompt-append-file']
+    ? readFileSync(resolve(process.cwd(), flags['prompt-append-file']), 'utf8')
+    : '';
+  const text = append ? `${replacement.trim()}\n\n${append.trim()}` : replacement.trim();
+
+  return {
+    text,
+    metrics: {
+      version: SYSTEM_PROMPT_VERSION,
+      hash: createHash('sha256').update(text).digest('hex').slice(0, 12),
+      chars: text.length,
+      estimatedTokens: Math.ceil(text.length / 4),
+    },
+  };
+}
+
 async function runCase(caseData: AnimaEvalCase, live: boolean): Promise<EvalRunOutput> {
   const storage = flags['storage-root']
     ? readStorageRoot(resolve(process.cwd(), flags['storage-root']))
@@ -357,13 +385,9 @@ async function runCase(caseData: AnimaEvalCase, live: boolean): Promise<EvalRunO
   console.log(`\nCase: ${caseData.id}`);
   console.log(`Model: ${model.alias || model.name} (${model.name}) via ${provider.name}`);
   console.log(`Mode: ${live ? 'live (POD tools via backend proxy)' : 'local (tools disabled)'}`);
-  console.log(
-    `Prompt: v${caseData.prompt.version}, ${caseData.prompt.chars} chars (~${caseData.prompt.estimatedTokens} tokens)`,
-  );
-  console.log('\nRunning candidate...\n');
 
   let user = { name: caseData.user.name } as Parameters<typeof systemPrompt>[0]['user'];
-  let result;
+  let proxyFetch: AuthProvider['fetch'] | undefined;
 
   if (live) {
     const session = await api<{ user: Parameters<typeof systemPrompt>[0]['user'] } | null>('/auth/session');
@@ -372,41 +396,46 @@ async function runCase(caseData: AnimaEvalCase, live: boolean): Promise<EvalRunO
       fail('Not logged in. Log in to Ànima and update ANIMA_SESSION_ID.');
     }
 
-    const sessionId = getSessionId();
-    const proxyFetch = createProxyFetch(sessionId);
-
     user = session.user;
+    proxyFetch = createProxyFetch(getSessionId());
     setAuthProvider({
       getUser: () => user,
       refreshProfile: async () => {},
       getClientId: () => `${flags.backend ?? BACKEND_URL}/clientid.jsonld`,
       fetch: proxyFetch,
     });
+  }
 
-    result = await runWithEngine(new SolidEngine({ fetch: proxyFetch }), () =>
-      generateText({
+  const prompt = buildPrompt(caseData, user);
+
+  console.log(
+    `Prompt: v${prompt.metrics.version}, ${prompt.metrics.chars} chars (~${prompt.metrics.estimatedTokens} tokens)`,
+  );
+  console.log('\nRunning candidate...\n');
+
+  const result = proxyFetch
+    ? await runWithEngine(new SolidEngine({ fetch: proxyFetch }), () =>
+        generateText({
+          model: languageModel.languageModel,
+          providerOptions: languageModel.providerOptions,
+          system: prompt.text,
+          messages,
+          tools,
+          activeTools: caseData.supportsTools ? objectKeys(tools) : [],
+          stopWhen: stepCountIs(10),
+          temperature: 0,
+        }),
+      )
+    : await generateText({
         model: languageModel.languageModel,
         providerOptions: languageModel.providerOptions,
-        system: systemPrompt({ user, supportsTools: caseData.supportsTools }),
+        system: prompt.text,
         messages,
         tools,
-        activeTools: caseData.supportsTools ? objectKeys(tools) : [],
-        stopWhen: stepCountIs(10),
+        activeTools: [],
+        stopWhen: stepCountIs(2),
         temperature: 0,
-      }),
-    );
-  } else {
-    result = await generateText({
-      model: languageModel.languageModel,
-      providerOptions: languageModel.providerOptions,
-      system: systemPrompt({ user, supportsTools: caseData.supportsTools }),
-      messages,
-      tools,
-      activeTools: [],
-      stopWhen: stepCountIs(2),
-      temperature: 0,
-    });
-  }
+      });
 
   const candidate = extractCandidate(result);
 
@@ -433,7 +462,7 @@ async function runCase(caseData: AnimaEvalCase, live: boolean): Promise<EvalRunO
     createdAt: new Date().toISOString(),
     model: { id: model.id, name: model.name, alias: model.alias ?? null },
     judgeModel: { id: judgeModel.id, name: judgeModel.name, alias: judgeModel.alias ?? null },
-    prompt: caseData.prompt,
+    prompt: prompt.metrics,
     candidate,
     judge,
     checks,
