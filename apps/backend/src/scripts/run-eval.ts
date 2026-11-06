@@ -1,0 +1,489 @@
+import '../lib/soukai-bis';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { parseArgs } from 'node:util';
+
+import {
+  AIProviderSchema,
+  AnimaEvalCaseSchema,
+  AnthropicModelsProviderFactory,
+  evalPassed,
+  GoogleModelsProviderFactory,
+  InstalledModelSchema,
+  judgeEval,
+  OllamaModelsProviderFactory,
+  OpenAIModelsProviderFactory,
+  OpenCodeGoModelsProviderFactory,
+  prepareMessagesForModel,
+  runEvalChecks,
+  setAuthProvider,
+  systemPrompt,
+  tools,
+  type AIProvider,
+  type AnimaEvalCase,
+  type AuthProvider,
+  type EvalCheckResult,
+  type EvalJudgeResult,
+  type InstalledModel,
+  type ModelsProviderFactory,
+} from '@anima/core';
+import { objectKeys } from '@noeldemartin/utils';
+import { convertToModelMessages, generateText, stepCountIs } from 'ai';
+import { runWithEngine, SolidEngine } from 'soukai-bis';
+
+const BACKEND_URL = (process.env.ANIMA_BACKEND_URL ?? 'http://localhost:1191').replace(/\/+$/, '');
+const SESSION_HEADER = 'X-Anima-Session-Id';
+const SESSION_FILES = [join(homedir(), '.anima-dev', 'session.json'), join(homedir(), '.anima', 'session.json')];
+
+const args = process.argv.slice(2);
+
+if (args[0] === '--') {
+  args.shift();
+}
+
+const { values: flags } = parseArgs({
+  args,
+  options: {
+    case: { type: 'string' },
+    model: { type: 'string' },
+    'judge-model': { type: 'string' },
+    'storage-root': { type: 'string' },
+    backend: { type: 'string' },
+    live: { type: 'boolean' },
+    out: { type: 'string' },
+    help: { type: 'boolean' },
+  },
+  allowPositionals: false,
+});
+
+interface StorageData {
+  providers: AIProvider[];
+  models: InstalledModel[];
+}
+
+interface EvalRunOutput {
+  caseId: string;
+  createdAt: string;
+  model: { id?: string; name: string; alias?: string | null };
+  judgeModel: { id?: string; name: string; alias?: string | null };
+  prompt: AnimaEvalCase['prompt'];
+  candidate: string;
+  judge: EvalJudgeResult;
+  checks: EvalCheckResult[];
+  pass: boolean;
+  usage: unknown;
+}
+
+function fail(message: string): never {
+  console.error(`\n❌ ${message}\n`);
+  process.exit(1);
+}
+
+function printHelp(): void {
+  console.log(`
+Run one Ànima eval case and judge the response.
+
+Usage:
+  vp run evals:run -- --case evals/cases/<id>.json
+  vp run evals:run -- --case evals/cases/<id>.json --live
+  vp run evals:run -- --case evals/cases/<id>.json --live --model D4F --judge-model D4F
+
+Options:
+  --case <path>          Eval case JSON file (required)
+  --live                 Run with live POD tools through the backend proxy
+  --model <id|alias>     Model to evaluate (default: case source model)
+  --judge-model <id>     Model to judge with (default: same as --model)
+  --storage-root <path>  Ànima storage root containing providers/ and models/
+  --backend <url>        Backend URL (default: http://localhost:1191)
+  --out <path>           Result JSON path (default: evals/results/<id>-<timestamp>.json)
+  --help                 Show this help
+
+Live mode needs ANIMA_SESSION_ID, or ~/.anima-dev/session.json with
+{ "sessionId": "..." }. The storage root is usually ~/.anima or ~/.anima-dev. If
+the backend runs inside proot, run this command inside proot or set
+ANIMA_STORAGE_ROOT.
+`);
+}
+
+function readJsonFiles<T>(directory: string, parse: (value: unknown) => T | null): T[] {
+  if (!existsSync(directory)) {
+    return [];
+  }
+
+  return readdirSync(directory)
+    .filter((file) => file.endsWith('.json'))
+    .flatMap((file) => {
+      try {
+        const parsed = parse(JSON.parse(readFileSync(join(directory, file), 'utf8')));
+
+        return parsed ? [parsed] : [];
+      } catch {
+        return [];
+      }
+    });
+}
+
+function readStorageRoot(root: string): StorageData {
+  if (!existsSync(root)) {
+    return { providers: [], models: [] };
+  }
+
+  const providers: AIProvider[] = [];
+  const models: InstalledModel[] = [];
+
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    const userRoot = join(root, entry.name);
+
+    providers.push(
+      ...readJsonFiles(join(userRoot, 'providers'), (value) => {
+        const parsed = AIProviderSchema.safeParse(value);
+
+        return parsed.success ? parsed.data : null;
+      }),
+    );
+    models.push(
+      ...readJsonFiles(join(userRoot, 'models'), (value) => {
+        const parsed = InstalledModelSchema.safeParse(value);
+
+        return parsed.success ? parsed.data : null;
+      }),
+    );
+  }
+
+  return { providers, models };
+}
+
+function modelMatches(model: InstalledModel, query: string): boolean {
+  const normalized = query.toLowerCase();
+
+  return [model.id, model.alias, model.name]
+    .filter((value): value is string => !!value)
+    .some((value) => value.toLowerCase() === normalized);
+}
+
+function findModel(models: InstalledModel[], query?: string, fallback?: string): InstalledModel {
+  if (query) {
+    const model = models.find((candidate) => modelMatches(candidate, query));
+
+    if (!model) {
+      fail(
+        `Model "${query}" not found. Available models: ${models
+          .map((candidate) => candidate.alias || candidate.name)
+          .join(', ')}`,
+      );
+    }
+
+    return model;
+  }
+
+  if (fallback) {
+    const model = models.find(
+      (candidate) =>
+        candidate.alias?.toLowerCase() === fallback.toLowerCase() ||
+        candidate.name.toLowerCase() === fallback.toLowerCase(),
+    );
+
+    if (model) {
+      return model;
+    }
+  }
+
+  if (models.length === 0) {
+    fail('No installed models found. Set ANIMA_STORAGE_ROOT to the backend storage root.');
+  }
+
+  return models[0] as InstalledModel;
+}
+
+function findProvider(providers: AIProvider[], model: InstalledModel): AIProvider {
+  const provider = providers.find((candidate) => candidate.id === model.providerId);
+
+  if (!provider) {
+    fail(`Provider "${model.providerId}" not found for model "${model.name}".`);
+  }
+
+  return provider;
+}
+
+function createFactory(type: string): ModelsProviderFactory {
+  switch (type) {
+    case 'anthropic':
+      return new AnthropicModelsProviderFactory('server');
+    case 'google':
+      return new GoogleModelsProviderFactory('server');
+    case 'openai':
+      return new OpenAIModelsProviderFactory('server');
+    case 'ollama':
+      return new OllamaModelsProviderFactory('server');
+    case 'opencode-go':
+      return new OpenCodeGoModelsProviderFactory('server');
+    default:
+      fail(`Unsupported provider type "${type}".`);
+  }
+}
+
+function getStorageRoots(): string[] {
+  return Array.from(
+    new Set(
+      [process.env.ANIMA_STORAGE_ROOT, join(homedir(), '.anima'), join(homedir(), '.anima-dev')].filter(
+        (value): value is string => !!value,
+      ),
+    ),
+  );
+}
+
+function readSessionFile(path: string): string | null {
+  if (!existsSync(path)) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as { sessionId?: unknown };
+
+    return typeof parsed.sessionId === 'string' ? parsed.sessionId : null;
+  } catch {
+    return null;
+  }
+}
+
+function getSessionId(): string {
+  const fromEnvironment = process.env.ANIMA_SESSION_ID?.trim();
+
+  if (fromEnvironment) {
+    return fromEnvironment;
+  }
+
+  for (const path of SESSION_FILES) {
+    const sessionId = readSessionFile(path);
+
+    if (sessionId) {
+      return sessionId;
+    }
+  }
+
+  fail(
+    'Live mode needs a session. Set ANIMA_SESSION_ID to localStorage["anima:sessionId"] ' +
+      'or create ~/.anima-dev/session.json with { "sessionId": "..." }.',
+  );
+}
+
+async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const backendUrl = (flags.backend ?? BACKEND_URL).replace(/\/+$/, '');
+  let response: Response;
+
+  try {
+    response = await fetch(`${backendUrl}/api${path}`, {
+      ...init,
+      headers: {
+        ...(init?.headers as Record<string, string> | undefined),
+        [SESSION_HEADER]: getSessionId(),
+      },
+    });
+  } catch {
+    fail(`Could not reach the Ànima backend at ${backendUrl}. Is \`vp run dev\` running?`);
+  }
+
+  if (response.status === 401) {
+    fail('Session expired or invalid. Update ANIMA_SESSION_ID from localStorage["anima:sessionId"].');
+  }
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+
+    fail(`Request failed (${response.status} ${response.statusText})${body ? `: ${body}` : ''}`);
+  }
+
+  const body = await response.text();
+
+  return (body ? JSON.parse(body) : undefined) as T;
+}
+
+function createProxyFetch(sessionId: string): AuthProvider['fetch'] {
+  const backendUrl = (flags.backend ?? BACKEND_URL).replace(/\/+$/, '');
+
+  return (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = input instanceof Request ? input : new Request(new URL(String(input), backendUrl), init);
+    const body = ['GET', 'HEAD'].includes(request.method) ? undefined : await request.text();
+
+    return fetch(`${backendUrl}/api/auth/proxy`, {
+      method: 'POST',
+      headers: {
+        [SESSION_HEADER]: sessionId,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        input: request.url,
+        init: {
+          method: request.method,
+          headers: Object.fromEntries(request.headers.entries()),
+          body,
+        },
+      }),
+    });
+  }) as AuthProvider['fetch'];
+}
+
+function extractCandidate(result: { text: string; steps: readonly { text: string }[] }): string {
+  const stepTexts = result.steps.map((step) => step.text.trim()).filter(Boolean);
+
+  return (stepTexts.length > 0 ? stepTexts.join('\n\n') : result.text).trim();
+}
+
+async function runCase(caseData: AnimaEvalCase, live: boolean): Promise<EvalRunOutput> {
+  const storage = flags['storage-root']
+    ? readStorageRoot(resolve(process.cwd(), flags['storage-root']))
+    : getStorageRoots().reduce<StorageData>(
+        (result, root) => {
+          const data = readStorageRoot(root);
+
+          return {
+            providers: [...result.providers, ...data.providers],
+            models: [...result.models, ...data.models],
+          };
+        },
+        { providers: [], models: [] },
+      );
+  const model = findModel(storage.models, flags.model, caseData.source.model);
+  const provider = findProvider(storage.providers, model);
+  const languageModel = await createFactory(provider.type).createLanguageModel(provider, model.name);
+  const messages = await convertToModelMessages(prepareMessagesForModel(caseData.context));
+
+  console.log(`\nCase: ${caseData.id}`);
+  console.log(`Model: ${model.alias || model.name} (${model.name}) via ${provider.name}`);
+  console.log(`Mode: ${live ? 'live (POD tools via backend proxy)' : 'local (tools disabled)'}`);
+  console.log(
+    `Prompt: v${caseData.prompt.version}, ${caseData.prompt.chars} chars (~${caseData.prompt.estimatedTokens} tokens)`,
+  );
+  console.log('\nRunning candidate...\n');
+
+  let user = { name: caseData.user.name } as Parameters<typeof systemPrompt>[0]['user'];
+  let result;
+
+  if (live) {
+    const session = await api<{ user: Parameters<typeof systemPrompt>[0]['user'] } | null>('/auth/session');
+
+    if (!session?.user) {
+      fail('Not logged in. Log in to Ànima and update ANIMA_SESSION_ID.');
+    }
+
+    const sessionId = getSessionId();
+    const proxyFetch = createProxyFetch(sessionId);
+
+    user = session.user;
+    setAuthProvider({
+      getUser: () => user,
+      refreshProfile: async () => {},
+      getClientId: () => `${flags.backend ?? BACKEND_URL}/clientid.jsonld`,
+      fetch: proxyFetch,
+    });
+
+    result = await runWithEngine(new SolidEngine({ fetch: proxyFetch }), () =>
+      generateText({
+        model: languageModel.languageModel,
+        providerOptions: languageModel.providerOptions,
+        system: systemPrompt({ user, supportsTools: caseData.supportsTools }),
+        messages,
+        tools,
+        activeTools: caseData.supportsTools ? objectKeys(tools) : [],
+        stopWhen: stepCountIs(10),
+        temperature: 0,
+      }),
+    );
+  } else {
+    result = await generateText({
+      model: languageModel.languageModel,
+      providerOptions: languageModel.providerOptions,
+      system: systemPrompt({ user, supportsTools: caseData.supportsTools }),
+      messages,
+      tools,
+      activeTools: [],
+      stopWhen: stepCountIs(2),
+      temperature: 0,
+    });
+  }
+
+  const candidate = extractCandidate(result);
+
+  console.log('--- Candidate ---\n');
+  console.log(candidate.length > 0 ? candidate : '(empty response)');
+  console.log('\nJudging...\n');
+
+  const judgeModel = findModel(storage.models, flags['judge-model'], flags.model ?? caseData.source.model);
+  const judgeProvider = findProvider(storage.providers, judgeModel);
+  const judgeLanguageModel =
+    judgeModel.id === model.id
+      ? languageModel
+      : await createFactory(judgeProvider.type).createLanguageModel(judgeProvider, judgeModel.name);
+  const judge = await judgeEval({
+    model: judgeLanguageModel.languageModel,
+    providerOptions: judgeLanguageModel.providerOptions,
+    caseData,
+    candidate,
+  });
+  const checks = runEvalChecks(caseData.checks, candidate);
+
+  return {
+    caseId: caseData.id,
+    createdAt: new Date().toISOString(),
+    model: { id: model.id, name: model.name, alias: model.alias ?? null },
+    judgeModel: { id: judgeModel.id, name: judgeModel.name, alias: judgeModel.alias ?? null },
+    prompt: caseData.prompt,
+    candidate,
+    judge,
+    checks,
+    pass: evalPassed(judge, checks),
+    usage: result.totalUsage,
+  };
+}
+
+async function main(): Promise<void> {
+  if (flags.help) {
+    printHelp();
+
+    return;
+  }
+
+  if (!flags.case) {
+    fail('Missing --case. Pass the path to an eval case JSON file.');
+  }
+
+  const casePath = resolve(process.cwd(), flags.case);
+  const caseData: AnimaEvalCase = AnimaEvalCaseSchema.parse(JSON.parse(readFileSync(casePath, 'utf8')));
+  const output = await runCase(caseData, flags.live === true);
+  const resultsDirectory = resolve(import.meta.dirname, '../../../../evals/results');
+  const outPath = flags.out
+    ? resolve(process.cwd(), flags.out)
+    : join(resultsDirectory, `${caseData.id}-${output.createdAt.replace(/[:.]/g, '-')}.json`);
+
+  console.log('--- Judge ---\n');
+  console.log(`Pass: ${output.pass ? '✅ yes' : '❌ no'}`);
+  console.log(`Scores: ${JSON.stringify(output.judge.scores)}`);
+
+  if (output.judge.failureModes.length > 0) {
+    console.log(`Failure modes: ${output.judge.failureModes.join(', ')}`);
+  }
+
+  console.log(`Rationale: ${output.judge.rationale}`);
+
+  if (output.checks.some((check) => !check.pass)) {
+    console.log('\nFailed deterministic checks:');
+    output.checks.filter((check) => !check.pass).forEach((check) => console.log(`- ${JSON.stringify(check.check)}`));
+  }
+
+  await mkdir(dirname(outPath), { recursive: true });
+  await writeFile(outPath, `${JSON.stringify(output, null, 2)}\n`, 'utf8');
+
+  console.log(`\nResult: ${outPath}\n`);
+
+  if (!output.pass) {
+    process.exitCode = 1;
+  }
+}
+
+await main();

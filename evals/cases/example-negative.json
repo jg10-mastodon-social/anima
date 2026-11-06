@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "kind": "negative",
+  "id": "2026-01-01-09-30-example-negative",
+  "createdAt": "2026-01-01T09:35:00.000Z",
+  "source": {
+    "chatUrl": "https://example.com/chats/example/index#it",
+    "chatTitle": "Example chat",
+    "requestMessageId": "https://example.com/chats/example/2026/1/1/chat#request",
+    "requestedAt": "2026-01-01T09:30:00.000Z",
+    "responseMessageId": "https://example.com/chats/example/2026/1/1/chat#response",
+    "respondedAt": "2026-01-01T09:30:08.000Z",
+    "model": "example-model",
+    "provider": "Example provider"
+  },
+  "user": {
+    "name": "Example User"
+  },
+  "supportsTools": false,
+  "prompt": {
+    "version": 1,
+    "hash": "000000000000",
+    "chars": 1000,
+    "estimatedTokens": 250
+  },
+  "context": [
+    {
+      "id": "https://example.com/chats/example/2026/1/1/chat#request",
+      "role": "user",
+      "parts": [
+        {
+          "type": "text",
+          "text": "Can you help me with this?"
+        }
+      ],
+      "metadata": {
+        "createdAt": "2026-01-01T09:30:00.000Z"
+      }
+    }
+  ],
+  "badResponse": {
+    "id": "https://example.com/chats/example/2026/1/1/chat#response",
+    "role": "assistant",
+    "parts": [
+      {
+        "type": "text",
+        "text": "I can't believe you'd ask me that. You should know better."
+      }
+    ],
+    "metadata": {
+      "model": "example-model",
+      "provider": "Example provider",
+      "createdAt": "2026-01-01T09:30:08.000Z"
+    }
+  },
+  "feedback": "That was rude.",
+  "issue": "Condescending and scolding",
+  "desired": "Answer the question directly and stay respectful",
+  "checks": [
+    {
+      "type": "judge",
+      "rubric": "tone",
+      "avoid": "Condescending and scolding",
+      "expect": "Answer the question directly and stay respectful"
+    }
+  ],
+  "tags": ["tone"]
+}

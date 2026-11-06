@@ -2,3 +2,6 @@ node_modules
 /solid/
 /solid-*/
 .bundle-tmp*
+evals/**/*.json
+!evals/cases/example-negative.json
+/evals/results/

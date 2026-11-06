@@ -1,6 +1,8 @@
 import type { SolidUserProfile } from '@noeldemartin/solid-utils';
 import { formatCodeBlock } from '@noeldemartin/utils';
 
+export const SYSTEM_PROMPT_VERSION = 1;
+
 interface SystemPromptOptions {
   user: SolidUserProfile;
   supportsTools: boolean;

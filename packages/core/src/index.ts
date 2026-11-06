@@ -1,3 +1,4 @@
+export * from './evals';
 export * from './lib';
 export * from './models';
 export * from './prompts';
