@@ -507,6 +507,8 @@ async function runCase(caseData: AnimaEvalCase, live: boolean): Promise<EvalRunO
     maxSteps: proxyFetch ? AGENT_MAX_STEPS : 2,
     finishReason: result.finishReason,
     toolCalls: result.toolCalls.length,
+    toolErrors: result.content.filter((part) => part.type === 'tool-error').length,
+    successfulTools: result.toolResults.map((toolResult) => toolResult.toolName),
     finalTextLength: candidate.length,
   };
 
@@ -514,7 +516,7 @@ async function runCase(caseData: AnimaEvalCase, live: boolean): Promise<EvalRunO
   console.log(candidate.length > 0 ? candidate : '(empty response)');
   console.log(
     `\nRun: ${run.steps}/${run.maxSteps} steps, finish=${run.finishReason}, ` +
-      `tools=${run.toolCalls}, text=${run.finalTextLength}\n`,
+      `tools=${run.toolCalls}, errors=${run.toolErrors}, text=${run.finalTextLength}\n`,
   );
   console.log('Judging...\n');
 

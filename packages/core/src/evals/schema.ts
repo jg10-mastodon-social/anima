@@ -45,6 +45,20 @@ export const EvalCheckSchema = z.discriminatedUnion('type', [
     type: z.literal('hasFinalText'),
     description: z.string().optional(),
   }),
+  z.object({
+    type: z.literal('noToolErrors'),
+    description: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal('requiredToolSuccess'),
+    value: z.array(z.string()).min(1),
+    description: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal('mentionsFile'),
+    value: z.string().min(1),
+    description: z.string().optional(),
+  }),
 ]);
 
 export const AnimaEvalCaseSchema = z.object({

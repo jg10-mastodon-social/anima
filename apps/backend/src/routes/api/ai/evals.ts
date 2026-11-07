@@ -86,6 +86,8 @@ export default new Elysia({ prefix: '/evals' })
           maxSteps: AGENT_MAX_STEPS,
           finishReason: result.finishReason,
           toolCalls: result.toolCalls.length,
+          toolErrors: result.content.filter((part) => part.type === 'tool-error').length,
+          successfulTools: result.toolResults.map((toolResult) => toolResult.toolName),
           finalTextLength: candidate.length,
         };
         const judge = await judgeEval({

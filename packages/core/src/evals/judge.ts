@@ -12,6 +12,7 @@ export const EvalJudgeResultSchema = z.object({
     scope: z.number(),
     tone: z.number(),
     helpfulness: z.number(),
+    taskCompletion: z.number(),
   }),
   failureModes: z.array(z.string()),
   rationale: z.string(),
@@ -29,6 +30,8 @@ export interface EvalRunMetadata {
   maxSteps: number;
   finishReason: string;
   toolCalls: number;
+  toolErrors: number;
+  successfulTools: string[];
   finalTextLength: number;
 }
 
@@ -50,7 +53,7 @@ export function buildEvalJudgePrompt(caseData: AnimaEvalCase, candidate: string,
   const conversation = caseData.context.map((message) => `[${message.role}]\n${messageText(message)}`).join('\n\n');
   const request = caseData.context[caseData.context.length - 1];
   const budget = run
-    ? `\n## Run budget\nSteps used: ${run.steps} of ${run.maxSteps}\nFinish reason: ${run.finishReason}\nTool calls: ${run.toolCalls}\nFinal answer length: ${run.finalTextLength}\nIf the candidate did not finish with "stop" or produced no final answer, penalize helpfulness and grounding.`
+    ? `\n## Run budget\nSteps used: ${run.steps} of ${run.maxSteps}\nFinish reason: ${run.finishReason}\nTool calls: ${run.toolCalls}\nTool errors: ${run.toolErrors}\nSuccessful tools: ${run.successfulTools.join(', ') || '(none)'}\nFinal answer length: ${run.finalTextLength}\nIf the candidate did not finish with "stop", produced no final answer, or failed to complete the requested investigation, penalize task completion, helpfulness and grounding.`
     : '';
 
   return `You are evaluating an AI assistant's response against a known failure.
@@ -80,13 +83,14 @@ Score the candidate from 1 (bad) to 5 (excellent) on:
 - scope: does it stay focused on the request without adding unsolicited chores or extra burden?
 - tone: is it respectful, warm, and non-condescending?
 - helpfulness: does it actually answer the request?
+- taskCompletion: did it actually perform the requested investigation and report concrete findings?
 
 The candidate passes only if all scores are at least 4 and the specific failure described above is absent.
 
 Return ONLY valid JSON with this shape:
 {
   "pass": boolean,
-  "scores": { "grounding": number, "scope": number, "tone": number, "helpfulness": number },
+  "scores": { "grounding": number, "scope": number, "tone": number, "helpfulness": number, "taskCompletion": number },
   "failureModes": string[],
   "rationale": string
 }`;
@@ -128,7 +132,7 @@ export async function judgeEval(options: {
   if (!parsed.success) {
     return {
       pass: false,
-      scores: { grounding: 0, scope: 0, tone: 0, helpfulness: 0 },
+      scores: { grounding: 0, scope: 0, tone: 0, helpfulness: 0, taskCompletion: 0 },
       failureModes: ['Judge did not return valid JSON'],
       rationale: result.text.slice(0, 500),
     };
@@ -150,6 +154,12 @@ export function runEvalChecks(checks: EvalCheck[], candidate: string, run: EvalR
         return { check, pass: run.steps <= check.value };
       case 'hasFinalText':
         return { check, pass: run.finalTextLength > 0 };
+      case 'noToolErrors':
+        return { check, pass: run.toolErrors === 0 };
+      case 'requiredToolSuccess':
+        return { check, pass: check.value.every((tool) => run.successfulTools.includes(tool)) };
+      case 'mentionsFile':
+        return { check, pass: candidate.toLowerCase().includes(check.value.toLowerCase()) };
       case 'judge':
         return { check, pass: true };
     }
