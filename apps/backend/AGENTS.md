@@ -12,6 +12,22 @@ The `@anima/backend` package is the web server for Ànima.
   - Managing an internal Community Solid Server (CSS) instance when running in managed POD mode.
   - Statically serving the frontend when bundled (`SERVE_FRONTEND=true`).
 
+## MCP servers
+
+The backend can load Model Context Protocol servers at boot and expose every tool they publish to chat models. Loading is controlled by environment variables:
+
+- `ANIMA_MCP_ENABLED=false` disables all MCP loading at boot. Truthy values are `true`, `1`, `yes`; falsey are `false`, `0`, `no`.
+- `ANIMA_MCP_CONFIG=/path/to/mcp.json` loads server definitions from a JSON file. Without it, the backend uses the built-in `cairn mcp stdio` server.
+- `ANIMA_MCP_SERVERS=cairn,other` loads only the named servers from the config. Unknown names are rejected during resolution; the backend logs a warning and continues without MCP.
+
+MCP is disabled by default for `E2E=true`, `EVALS=true`, and `NODE_ENV=test`; set `ANIMA_MCP_ENABLED=true` to override. An explicit `enabled` value in a config file also overrides the test/E2E default.
+
+See `mcp.example.json` for the stdio shape. HTTP servers use `{ "type": "http", "url": "...", "headers": {...} }`. Tool names are exposed unchanged unless two servers publish the same name; then both are prefixed with `<server>__`.
+
+The full catalogue is exposed; there is no tool allowlist. MCP tools are available only in backend mode, not the SPA runtime. The instructions from each MCP server are appended to the chat system prompt.
+
+If the Cairn daemon is not signed in, its tools return Cairn's `authentication_required` result until `cairn login` is run; the backend does not store or forward Solid credentials.
+
 ## Endpoints
 
 ### Always Available
