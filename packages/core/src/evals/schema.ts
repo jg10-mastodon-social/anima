@@ -31,6 +31,20 @@ export const EvalCheckSchema = z.discriminatedUnion('type', [
     expect: z.string().optional(),
     description: z.string().optional(),
   }),
+  z.object({
+    type: z.literal('finishReason'),
+    value: z.string(),
+    description: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal('maxSteps'),
+    value: z.number(),
+    description: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal('hasFinalText'),
+    description: z.string().optional(),
+  }),
 ]);
 
 export const AnimaEvalCaseSchema = z.object({

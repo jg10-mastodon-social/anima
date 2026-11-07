@@ -7,6 +7,8 @@ import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
 import {
+  AGENT_FINAL_STEP_NOTICE,
+  AGENT_MAX_STEPS,
   AIProviderSchema,
   AnimaEvalCaseSchema,
   AnthropicModelsProviderFactory,
@@ -29,6 +31,7 @@ import {
   type AuthProvider,
   type EvalCheckResult,
   type EvalJudgeResult,
+  type EvalRunMetadata,
   type InstalledModel,
   type ModelsProviderFactory,
 } from '@anima/core';
@@ -76,6 +79,7 @@ interface EvalRunOutput {
   judgeModel: { id?: string; name: string; alias?: string | null };
   prompt: AnimaEvalCase['prompt'];
   candidate: string;
+  run: EvalRunMetadata;
   judge: EvalJudgeResult;
   checks: EvalCheckResult[];
   pass: boolean;
@@ -439,7 +443,17 @@ async function runCase(caseData: AnimaEvalCase, live: boolean): Promise<EvalRunO
               messages,
               tools,
               activeTools: caseData.supportsTools ? objectKeys(tools) : [],
-              stopWhen: stepCountIs(10),
+              prepareStep({ stepNumber }) {
+                if (stepNumber < AGENT_MAX_STEPS - 1) {
+                  return {};
+                }
+
+                return {
+                  activeTools: [],
+                  system: `${prompt.text}\n\n${AGENT_FINAL_STEP_NOTICE}`,
+                };
+              },
+              stopWhen: stepCountIs(AGENT_MAX_STEPS),
               temperature: 0,
             }),
           )
@@ -488,10 +502,21 @@ async function runCase(caseData: AnimaEvalCase, live: boolean): Promise<EvalRunO
   }
 
   const candidate = extractCandidate(result);
+  const run: EvalRunMetadata = {
+    steps: result.steps.length,
+    maxSteps: proxyFetch ? AGENT_MAX_STEPS : 2,
+    finishReason: result.finishReason,
+    toolCalls: result.toolCalls.length,
+    finalTextLength: candidate.length,
+  };
 
   console.log('--- Candidate ---\n');
   console.log(candidate.length > 0 ? candidate : '(empty response)');
-  console.log('\nJudging...\n');
+  console.log(
+    `\nRun: ${run.steps}/${run.maxSteps} steps, finish=${run.finishReason}, ` +
+      `tools=${run.toolCalls}, text=${run.finalTextLength}\n`,
+  );
+  console.log('Judging...\n');
 
   const judgeModel = findModel(storage.models, flags['judge-model'], flags.model ?? caseData.source.model);
   const judgeProvider = findProvider(storage.providers, judgeModel);
@@ -506,12 +531,13 @@ async function runCase(caseData: AnimaEvalCase, live: boolean): Promise<EvalRunO
         providerOptions: judgeLanguageModel.providerOptions,
         caseData,
         candidate,
+        run,
       });
     } catch (error) {
       fail(`Judge failed: ${getAIErrorMessage(error)}`);
     }
   })();
-  const checks = runEvalChecks(caseData.checks, candidate);
+  const checks = runEvalChecks(caseData.checks, candidate, run);
 
   return {
     caseId: caseData.id,
@@ -520,6 +546,7 @@ async function runCase(caseData: AnimaEvalCase, live: boolean): Promise<EvalRunO
     judgeModel: { id: judgeModel.id, name: judgeModel.name, alias: judgeModel.alias ?? null },
     prompt: prompt.metrics,
     candidate,
+    run,
     judge,
     checks,
     pass: evalPassed(judge, checks),

@@ -105,6 +105,11 @@ See `cases/example-negative.json`.
 - `issue`: what was wrong
 - `desired`: what should happen instead
 - `checks`: deterministic checks and/or an LLM judge rubric
+  - `finishReason`: require the agent loop to finish with `stop`
+  - `maxSteps`: require the run to stay within a step budget
+  - `hasFinalText`: require a non-empty final answer
+  - archived negative cases default to `finishReason: stop` and `hasFinalText`
+- `run`: recorded with each result (`steps`, `maxSteps`, `finishReason`, `toolCalls`, `finalTextLength`)
 - `prompt`: version, hash, chars, and estimated tokens of the system prompt at
   capture time
 

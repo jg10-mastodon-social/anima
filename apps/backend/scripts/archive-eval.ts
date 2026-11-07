@@ -694,7 +694,11 @@ async function main(): Promise<void> {
     feedback: flags.feedback?.trim() || undefined,
     issue: caseIssue,
     desired,
-    checks: [{ type: 'judge', rubric, avoid: caseIssue, expect: desired }],
+    checks: [
+      { type: 'judge', rubric, avoid: caseIssue, expect: desired },
+      { type: 'finishReason', value: 'stop' },
+      { type: 'hasFinalText' },
+    ],
     tags,
   };
 

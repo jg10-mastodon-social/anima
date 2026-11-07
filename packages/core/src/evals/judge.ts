@@ -24,6 +24,14 @@ export interface EvalCheckResult {
   pass: boolean;
 }
 
+export interface EvalRunMetadata {
+  steps: number;
+  maxSteps: number;
+  finishReason: string;
+  toolCalls: number;
+  finalTextLength: number;
+}
+
 function messageText(message: AnimaEvalCase['context'][number]): string {
   return message.parts
     .filter((part) => part.type === 'text')
@@ -38,9 +46,12 @@ function rejectedText(caseData: AnimaEvalCase): string {
     .join('\n\n');
 }
 
-export function buildEvalJudgePrompt(caseData: AnimaEvalCase, candidate: string): string {
+export function buildEvalJudgePrompt(caseData: AnimaEvalCase, candidate: string, run?: EvalRunMetadata): string {
   const conversation = caseData.context.map((message) => `[${message.role}]\n${messageText(message)}`).join('\n\n');
   const request = caseData.context[caseData.context.length - 1];
+  const budget = run
+    ? `\n## Run budget\nSteps used: ${run.steps} of ${run.maxSteps}\nFinish reason: ${run.finishReason}\nTool calls: ${run.toolCalls}\nFinal answer length: ${run.finalTextLength}\nIf the candidate did not finish with "stop" or produced no final answer, penalize helpfulness and grounding.`
+    : '';
 
   return `You are evaluating an AI assistant's response against a known failure.
 
@@ -62,6 +73,7 @@ ${caseData.issue}
 ${caseData.desired ? `## Desired behavior\n${caseData.desired}` : ''}
 
 ${caseData.feedback ? `## User feedback\n${caseData.feedback}` : ''}
+${budget}
 
 Score the candidate from 1 (bad) to 5 (excellent) on:
 - grounding: does it avoid asserting facts it cannot support, especially treating absence of evidence as evidence of absence?
@@ -102,12 +114,13 @@ export async function judgeEval(options: {
   providerOptions?: ProviderOptions;
   caseData: AnimaEvalCase;
   candidate: string;
+  run?: EvalRunMetadata;
 }): Promise<EvalJudgeResult> {
   const result = await generateText({
     model: options.model,
     providerOptions: options.providerOptions,
     system: 'You are a strict, fair evaluator. Return only the requested JSON.',
-    prompt: buildEvalJudgePrompt(options.caseData, options.candidate),
+    prompt: buildEvalJudgePrompt(options.caseData, options.candidate, options.run),
     temperature: 0,
   });
   const parsed = EvalJudgeResultSchema.safeParse(parseJson(result.text));
@@ -124,13 +137,19 @@ export async function judgeEval(options: {
   return parsed.data;
 }
 
-export function runEvalChecks(checks: EvalCheck[], candidate: string): EvalCheckResult[] {
+export function runEvalChecks(checks: EvalCheck[], candidate: string, run: EvalRunMetadata): EvalCheckResult[] {
   return checks.map((check) => {
     switch (check.type) {
       case 'contains':
         return { check, pass: candidate.includes(check.value) };
       case 'notContains':
         return { check, pass: !candidate.includes(check.value) };
+      case 'finishReason':
+        return { check, pass: run.finishReason === check.value };
+      case 'maxSteps':
+        return { check, pass: run.steps <= check.value };
+      case 'hasFinalText':
+        return { check, pass: run.finalTextLength > 0 };
       case 'judge':
         return { check, pass: true };
     }

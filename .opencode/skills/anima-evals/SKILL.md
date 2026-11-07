@@ -155,7 +155,13 @@ Local mode disables tools; a low helpfulness score there can reflect the missing
 tool access rather than the prompt. Use live mode for grounding/helpfulness.
 
 Results are written to `evals/results/`. Report the candidate response, the judge
-scores, and whether the specific failure recurs.
+scores, the run budget (`steps`/`maxSteps`, `finishReason`, `toolCalls`), and
+whether the specific failure recurs.
+
+The runner injects a final-step reminder and disables tools on the last step, so
+the model must produce a final answer within the budget. Cases can fail
+deterministically when `finishReason` is not `stop`, the step budget is exceeded,
+or the final text is empty.
 
 ## Guardrails
 

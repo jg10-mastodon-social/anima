@@ -1,4 +1,6 @@
 import {
+  AGENT_FINAL_STEP_NOTICE,
+  AGENT_MAX_STEPS,
   AnimaChatRecordSchema,
   tools,
   ModelsManager,
@@ -126,14 +128,25 @@ export default new Elysia().group('chats', (app) =>
 
           let errorMessage: string | null = null;
 
+          const system = systemPrompt({ user: session.user, supportsTools: model.supportsTools });
           const result = streamText({
             tools,
             providerOptions,
             model: languageModel,
             activeTools: model.supportsTools ? objectKeys(tools) : [],
             messages: await convertToModelMessages(prepareMessagesForModel(originalMessages)),
-            system: systemPrompt({ user: session.user, supportsTools: model.supportsTools }),
-            stopWhen: stepCountIs(10),
+            system,
+            prepareStep({ stepNumber }) {
+              if (stepNumber < AGENT_MAX_STEPS - 1) {
+                return {};
+              }
+
+              return {
+                activeTools: [],
+                system: `${system}\n\n${AGENT_FINAL_STEP_NOTICE}`,
+              };
+            },
+            stopWhen: stepCountIs(AGENT_MAX_STEPS),
           });
 
           result.consumeStream();

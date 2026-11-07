@@ -1,6 +1,8 @@
 import { env, Events } from '@aerogel/core';
 import { Solid } from '@aerogel/plugin-solid';
 import {
+  AGENT_FINAL_STEP_NOTICE,
+  AGENT_MAX_STEPS,
   ModelsManager,
   setAuthProvider,
   systemPrompt,
@@ -76,8 +78,8 @@ export default class LocalRuntime extends Runtime {
         doGenerate: () => fail("Can't use NOOP model"),
         doStream: () => fail("Can't use NOOP model"),
       },
-      stopWhen: stepCountIs(10),
-      async prepareStep() {
+      stopWhen: stepCountIs(AGENT_MAX_STEPS),
+      async prepareStep({ stepNumber }) {
         if (!AI.selectedModel) {
           throw new Error('No selected model');
         }
@@ -85,12 +87,13 @@ export default class LocalRuntime extends Runtime {
         const { languageModel: model, providerOptions } = await ModelsManager.createLanguageModel(AI.selectedModel.id, {
           sessionId: chat.url,
         });
+        const system = systemPrompt({ user: Solid.requireUser(), supportsTools: AI.selectedModel.supportsTools });
 
         return {
           model,
           providerOptions,
-          activeTools: AI.selectedModel.supportsTools ? objectKeys(tools) : [],
-          system: systemPrompt({ user: Solid.requireUser(), supportsTools: AI.selectedModel.supportsTools }),
+          activeTools: stepNumber >= AGENT_MAX_STEPS - 1 ? [] : AI.selectedModel.supportsTools ? objectKeys(tools) : [],
+          system: stepNumber >= AGENT_MAX_STEPS - 1 ? `${system}\n\n${AGENT_FINAL_STEP_NOTICE}` : system,
         };
       },
     });

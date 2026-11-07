@@ -1,4 +1,6 @@
 import {
+  AGENT_FINAL_STEP_NOTICE,
+  AGENT_MAX_STEPS,
   AnimaEvalCaseSchema,
   evalPassed,
   judgeEval,
@@ -7,6 +9,7 @@ import {
   runEvalChecks,
   systemPrompt,
   tools,
+  type EvalRunMetadata,
   type ModelId,
 } from '@anima/core';
 import { isDevelopment, objectKeys } from '@noeldemartin/utils';
@@ -16,6 +19,24 @@ import z from 'zod';
 
 import { env } from '../../../lib/env';
 import Auth from '../../../services/Auth';
+
+function extractCandidate(result: {
+  content: readonly { type: string; text?: string }[];
+  text: string;
+  steps: readonly { text: string }[];
+}): string {
+  const contentText = result.content
+    .filter((part) => part.type === 'text')
+    .map((part) => part.text?.trim() ?? '')
+    .filter(Boolean)
+    .join('\n\n');
+  const stepText = result.steps
+    .map((step) => step.text.trim())
+    .filter(Boolean)
+    .join('\n\n');
+
+  return (contentText || stepText || result.text).trim();
+}
 
 export default new Elysia({ prefix: '/evals' })
   .onBeforeHandle(() => {
@@ -46,17 +67,35 @@ export default new Elysia({ prefix: '/evals' })
           messages,
           tools,
           activeTools: caseData.supportsTools ? objectKeys(tools) : [],
-          stopWhen: stepCountIs(10),
+          prepareStep({ stepNumber }) {
+            if (stepNumber < AGENT_MAX_STEPS - 1) {
+              return {};
+            }
+
+            return {
+              activeTools: [],
+              system: `${system}\n\n${AGENT_FINAL_STEP_NOTICE}`,
+            };
+          },
+          stopWhen: stepCountIs(AGENT_MAX_STEPS),
           temperature: 0,
         });
-        const candidate = result.text.trim();
+        const candidate = extractCandidate(result);
+        const run: EvalRunMetadata = {
+          steps: result.steps.length,
+          maxSteps: AGENT_MAX_STEPS,
+          finishReason: result.finishReason,
+          toolCalls: result.toolCalls.length,
+          finalTextLength: candidate.length,
+        };
         const judge = await judgeEval({
           model: judgeModel.languageModel,
           providerOptions: judgeModel.providerOptions,
           caseData,
           candidate,
+          run,
         });
-        const checks = runEvalChecks(caseData.checks, candidate);
+        const checks = runEvalChecks(caseData.checks, candidate, run);
 
         return {
           caseId: caseData.id,
@@ -64,6 +103,7 @@ export default new Elysia({ prefix: '/evals' })
           judgeModelId: body.judgeModelId ?? body.modelId,
           prompt: caseData.prompt,
           candidate,
+          run,
           judge,
           checks,
           pass: evalPassed(judge, checks),
