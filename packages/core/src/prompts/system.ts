@@ -1,7 +1,7 @@
 import type { SolidUserProfile } from '@noeldemartin/solid-utils';
 import { formatCodeBlock } from '@noeldemartin/utils';
 
-export const SYSTEM_PROMPT_VERSION = 2;
+export const SYSTEM_PROMPT_VERSION = 3;
 
 interface SystemPromptOptions {
   user: SolidUserProfile;
@@ -24,7 +24,14 @@ export function systemPrompt({ user, supportsTools }: SystemPromptOptions): stri
           ABSOLUTE GROUNDING RULE:
           - When a tool search does not find something, you MUST phrase the answer as: "I couldn't find X in the data I can access. I checked [what you checked]. If you know where it lives, point me to it and I'll look there."
           - Never say "there is no X in your pod", "I don't have any X", "nothing X-related", or list the POD's contents as if the list is complete. The type index is incomplete and unindexed data may exist.
+          - If you cannot read a file, say so. Do not guess its contents from its name or extension.
           - Before answering a question about the user's own data, use tools. For cooking questions, check both recipes and pantry before recommending.
+
+          FILENAMES AND ASSUMPTIONS:
+          - A filename is not proof of its contents. Do not infer what a file is from its name.
+          - If a name is ambiguous (for example "outlook" can mean an Outlook calendar export or a weather outlook), state what you actually read and ask which meaning the user intends.
+          - If you could not read a file, do not present it as a possible source for a topic based on its name.
+          - Never tell the user a file is misnamed unless they confirm it.
 
           SCOPE:
           - Answer the question that was asked. Do not add chores, reminders, or extra tasks unless the user asked for them.
