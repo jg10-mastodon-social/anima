@@ -26,6 +26,8 @@ See `mcp.example.json` for the stdio shape. HTTP servers use `{ "type": "http", 
 
 The full catalogue is exposed; there is no tool allowlist. MCP tools are available only in backend mode, not the SPA runtime. The instructions from each MCP server are appended to the chat system prompt.
 
+At chat time the backend also injects a compact catalogue of Cairn skills (name, description, activation and exact URI) into the system prompt, refreshed at most every 5 minutes. Bodies are never injected; the model calls load_skill on demand. The catalogue is only fetched when list_skills is available, failures are logged and ignored, and a refresh retains Cairn's list_skills audit event.
+
 If the Cairn daemon is not signed in, its tools return Cairn's `authentication_required` result until `cairn login` is run; the backend does not store or forward Solid credentials.
 
 When the backend runs inside proot on Android, proot's `$HOME` is `/root` while Cairn's broker descriptor lives in the Termux home. Start the backend with `CAIRN_HOME=/data/data/com.termux/files/home/.cairn`, or set `env.CAIRN_HOME` on the `cairn` server in `mcp.json`. Without it, the server still lists its tools, but authenticated calls return `authentication_required`.

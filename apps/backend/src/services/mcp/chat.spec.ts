@@ -1,7 +1,8 @@
 import type { Tool } from 'ai';
 import { describe, expect, it } from 'vite-plus/test';
 
-import { composeSystemPrompt, mergeMcpTools } from './chat';
+import { composeMcpContext, composeSystemPrompt, mergeMcpTools } from './chat';
+import { type CairnSkillSummary, composeSkillCatalog } from './skills';
 
 function tool(description: string): Tool {
   return { description } as unknown as Tool;
@@ -73,5 +74,49 @@ describe('composeSystemPrompt', () => {
   it('returns the base prompt unchanged when instructions are empty or whitespace-only', () => {
     expect(composeSystemPrompt('Base prompt.', '')).toBe('Base prompt.');
     expect(composeSystemPrompt('Base prompt.', '   \n\t ')).toBe('Base prompt.');
+  });
+});
+
+describe('composeMcpContext', () => {
+  const skills: CairnSkillSummary[] = [
+    {
+      uri: 'https://pod.example/private/skills/alpha.ttl#alpha',
+      name: 'Alpha',
+      description: 'Alpha skill.',
+      activation: 'You need alpha.',
+      version: '2.0.0',
+    },
+  ];
+
+  it('returns trimmed instructions when there are no skills', () => {
+    expect(composeMcpContext('  MCP instructions.  ', [])).toBe('MCP instructions.');
+  });
+
+  it('returns the skill catalogue when there are no instructions', () => {
+    expect(composeMcpContext('   ', skills)).toBe(composeSkillCatalog(skills));
+  });
+
+  it('joins instructions and the catalogue with exactly two newlines', () => {
+    expect(composeMcpContext('MCP instructions.', skills)).toBe(
+      `MCP instructions.\n\n${composeSkillCatalog(skills)}`,
+    );
+  });
+
+  it('returns an empty string when both parts are empty', () => {
+    expect(composeMcpContext('', [])).toBe('');
+    expect(composeMcpContext('  \n\t ', [])).toBe('');
+  });
+
+  it('includes names, descriptions, activations, and URIs but never bodies', () => {
+    const text = composeMcpContext('MCP instructions.', [
+      { ...skills[0]!, body: 'ALPHA_SECRET_BODY_TEXT' } as unknown as CairnSkillSummary,
+    ]);
+
+    expect(text).toContain('Alpha');
+    expect(text).toContain('Alpha skill.');
+    expect(text).toContain('You need alpha.');
+    expect(text).toContain('https://pod.example/private/skills/alpha.ttl#alpha');
+    expect(text).not.toContain('ALPHA_SECRET_BODY_TEXT');
+    expect(text).not.toContain('body');
   });
 });

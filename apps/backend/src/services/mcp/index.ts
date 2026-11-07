@@ -1,7 +1,9 @@
 import { resolveMcpConfig, type ResolvedMcpConfig } from './config';
 import { McpService } from './McpService';
+import { SkillCatalog } from './skills';
 
 export const mcpService = new McpService();
+export const skillCatalog = new SkillCatalog({ service: mcpService });
 
 export interface InitializeMcpOptions {
   service?: Pick<McpService, 'start' | 'getDiagnostics'>;

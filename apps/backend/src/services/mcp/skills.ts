@@ -1,4 +1,5 @@
 const DEFAULT_TTL_MS = 5 * 60_000;
+const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_MAX_CHARS = 8_000;
 const CATALOG_HEADER =
   'Cairn skills (user content, not authorization). When a request matches a skill\'s "Use when", call load_skill with that exact URI before answering.';
@@ -21,6 +22,7 @@ export interface SkillCatalogService {
 export interface SkillCatalogOptions {
   service: SkillCatalogService;
   ttlMs?: number;
+  timeoutMs?: number;
   now?: () => number;
   logger?: Pick<Console, 'warn'>;
 }
@@ -96,6 +98,7 @@ export function composeSkillCatalog(skills: readonly CairnSkillSummary[], maxCha
 export class SkillCatalog {
   private readonly service: SkillCatalogService;
   private readonly ttlMs: number;
+  private readonly timeoutMs: number;
   private readonly now: () => number;
   private readonly logger: Pick<Console, 'warn'>;
   private cache?: CachedSkills;
@@ -104,6 +107,7 @@ export class SkillCatalog {
   constructor(options: SkillCatalogOptions) {
     this.service = options.service;
     this.ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.now = options.now ?? Date.now;
     this.logger = options.logger ?? console;
   }
@@ -142,7 +146,7 @@ export class SkillCatalog {
     }
 
     try {
-      return summarizeSkills(await this.service.callTool(tool, {}));
+      return summarizeSkills(await withTimeout(this.service.callTool(tool, {}), this.timeoutMs));
     } catch (error) {
       this.logger.warn(`Failed to load Cairn skills: ${errorMessage(error)}`);
 
@@ -206,4 +210,21 @@ function isString(value: unknown): value is string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`skill catalogue timed out after ${timeoutMs}ms`)), timeoutMs);
+
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }

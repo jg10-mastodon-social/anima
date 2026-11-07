@@ -21,8 +21,8 @@ import Elysia, { status } from 'elysia';
 import z from 'zod';
 
 import Auth from '../../../services/Auth';
-import { mcpService } from '../../../services/mcp';
-import { composeSystemPrompt, mergeMcpTools } from '../../../services/mcp/chat';
+import { mcpService, skillCatalog } from '../../../services/mcp';
+import { composeMcpContext, composeSystemPrompt, mergeMcpTools } from '../../../services/mcp/chat';
 
 function mapChat(chat: AnimaChatRecord): ApiAnimaChat {
   return {
@@ -130,9 +130,10 @@ export default new Elysia().group('chats', (app) =>
 
           let errorMessage: string | null = null;
 
+          const skills = model.supportsTools ? await skillCatalog.get() : [];
           const system = composeSystemPrompt(
             systemPrompt({ user: session.user, supportsTools: model.supportsTools }),
-            mcpService.getInstructions(),
+            composeMcpContext(mcpService.getInstructions(), skills),
           );
           const chatTools = mergeMcpTools(tools, mcpService.getTools());
           const result = streamText({

@@ -290,6 +290,25 @@ describe('SkillCatalog', () => {
     expect(callTool).toHaveBeenCalledTimes(1);
   });
 
+  it('times out a hanging list-skills call, logs, and caches an empty list', async () => {
+    let time = 0;
+    const warn = vi.fn();
+    const { service, callTool } = createFakeService({ callTool: () => new Promise(() => {}) });
+    const catalog = new SkillCatalog({ service, logger: { warn }, now: () => time, timeoutMs: 10 });
+
+    const startedAt = Date.now();
+
+    await expect(catalog.get()).resolves.toEqual([]);
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('timed out'));
+    expect(callTool).toHaveBeenCalledTimes(1);
+
+    time = 1_000;
+
+    await expect(catalog.get()).resolves.toEqual([]);
+    expect(callTool).toHaveBeenCalledTimes(1);
+  });
+
   it('invalidates the cache', async () => {
     const { service, callTool } = createFakeService();
     const catalog = new SkillCatalog({ service });
