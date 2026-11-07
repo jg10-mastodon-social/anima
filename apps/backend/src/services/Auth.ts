@@ -140,7 +140,7 @@ export class AuthService {
       .filter(isManagedSession)
       .map((session) => session.credentials.clientId);
     const credentials = await SolidServer.login(options, activeClientIds);
-    const session = new Session({ keepAlive: false });
+    const session = new Session({ keepAlive: true });
     const sessionId = uuid();
 
     await session.login({
@@ -182,7 +182,7 @@ export class AuthService {
   }
 
   public async loginWithOidc(oidcIssuer: string): Promise<{ sessionId: string; redirectUrl: string }> {
-    const session = new Session({ keepAlive: false });
+    const session = new Session({ keepAlive: true });
     const promisedResult = new PromisedValue<{ redirectUrl: string } | { error: string }>();
 
     session.events.on(EVENTS.AUTHORIZATION_REQUEST, ({ state }) => {
