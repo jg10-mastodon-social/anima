@@ -1,0 +1,42 @@
+diff --git a/dist/zod/utils.js b/dist/zod/utils.js
+index 04714724f06122a0ffca8d03fba11e90fdf30bd9..80bdf2e5b2d42b254ea1b4ae1317373d540b10b8 100644
+--- a/dist/zod/utils.js
++++ b/dist/zod/utils.js
+@@ -1,6 +1,6 @@
+ import { RDFLiteral, RDFNamedNode } from "@noeldemartin/solid-utils";
+ import { ZodOptional, ZodDefault, ZodArray, ZodDate, ZodNumber, ZodBoolean, ZodURL } from "zod";
+-import { isDevelopment, isTesting, required, parseDate } from "@noeldemartin/utils";
++import { isTesting, required, parseDate } from "@noeldemartin/utils";
+ import SoukaiError from "../errors/SoukaiError.js";
+ import { XSD_BOOLEAN, XSD_INTEGER, XSD_DATE_TIME, XSD_DATE_TIME_TYPE, XSD_INTEGER_TYPE, XSD_BOOLEAN_TYPE } from "../utils/rdf.js";
+ function castToJavaScript(objects, definition) {
+@@ -11,7 +11,7 @@ function castToJavaScript(objects, definition) {
+   }
+   if (objects.length > 1) {
+     console.warn("Multiple objects found for single value", { definition, objects });
+-    if (isDevelopment() || isTesting()) {
++    if (isTesting()) { // Development runs against real pods; production only warns about this, so tests are the only place that should throw.
+       throw new SoukaiError("Cannot cast multiple objects to a single value");
+     }
+   }
+diff --git a/src/zod/utils.ts b/src/zod/utils.ts
+index dd99cb70fa971ffa3e06b6d4eb7b1736743cfb12..ac5252a78b2a2c2e5a0791bcc89db135199a2a96 100644
+--- a/src/zod/utils.ts
++++ b/src/zod/utils.ts
+@@ -1,6 +1,6 @@
+ import { RDFLiteral, RDFNamedNode } from '@noeldemartin/solid-utils';
+ import { ZodArray, ZodBoolean, ZodDate, ZodDefault, ZodNumber, ZodOptional, ZodURL } from 'zod';
+-import { isDevelopment, isTesting, parseDate, required } from '@noeldemartin/utils';
++import { isTesting, parseDate, required } from '@noeldemartin/utils';
+ import type { Quad_Object } from '@rdfjs/types';
+ import type { SomeType } from 'zod/v4/core';
+ 
+@@ -25,7 +25,7 @@ export function castToJavaScript(objects: [Quad_Object, ...Quad_Object[]], defin
+         // eslint-disable-next-line no-console
+         console.warn('Multiple objects found for single value', { definition, objects });
+ 
+-        if (isDevelopment() || isTesting()) {
++        if (isTesting()) { // Development runs against real pods; production only warns about this, so tests are the only place that should throw.
+             throw new SoukaiError('Cannot cast multiple objects to a single value');
+         }
+     }

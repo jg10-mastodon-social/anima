@@ -16,7 +16,7 @@ catalog:
   '@tailwindcss/vite': ^4.1.18
   '@vitejs/plugin-vue': ^6.0.4
   ai: ^7.0.0
-  soukai-bis: next
+  soukai-bis: 0.0.0-next.8084c9222458428ddf89e67d7ba9298b2908f275
   tailwindcss: ^4.1.18
   typescript: ~5.9.3
   vite: npm:@voidzero-dev/vite-plus-core@latest
@@ -54,6 +54,7 @@ patchedDependencies:
   '@elysiajs/node@1.4.5': patches/@elysiajs__node@1.4.5.patch
   '@inrupt/solid-client-authn-core': patches/@inrupt__solid-client-authn-core.patch
   '@inrupt/solid-client-authn-node': patches/@inrupt__solid-client-authn-node.patch
+  soukai-bis@0.0.0-next.8084c9222458428ddf89e67d7ba9298b2908f275: patches/soukai-bis@0.0.0-next.8084c9222458428ddf89e67d7ba9298b2908f275.patch
 
 peerDependencyRules:
   allowAny:
