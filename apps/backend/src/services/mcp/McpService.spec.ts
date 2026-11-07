@@ -44,11 +44,16 @@ function enabledConfig(servers: Record<string, EnabledServer>): ResolvedMcpConfi
   return { enabled: true, servers };
 }
 
-function fakeClient(tools: Record<string, Tool>, instructions?: string): McpClientLike {
+function fakeClient(
+  tools: Record<string, Tool>,
+  instructions?: string,
+  callTool?: McpClientLike['callTool'],
+): McpClientLike {
   return {
     instructions,
     tools: async () => tools,
     close: async () => {},
+    ...(callTool ? { callTool } : {}),
   };
 }
 
@@ -139,6 +144,15 @@ describe('McpService', () => {
       resourceUris: ['https://example.com/thing#it'],
     });
 
+    expect(service.hasTool('echo')).toBe(true);
+    expect(service.hasTool('missing')).toBe(false);
+
+    const raw = await service.callTool('echo', { text: 'hi' });
+
+    expect(raw).toMatchObject({ content: [{ type: 'text', text: 'echo:hi' }] });
+    expect(raw).not.toHaveProperty('text');
+    await expect(service.callTool('missing')).rejects.toThrow('MCP tool "missing" is not available.');
+
     service.getDiagnostics().pop();
     expect(service.getDiagnostics()).toEqual([{ server: 'one', status: 'started', toolCount: 2 }]);
 
@@ -167,6 +181,16 @@ describe('McpService', () => {
 
     expect(await executeTool(tools.one__echo, { text: 'hi' })).toEqual({ text: 'echo:hi' });
     expect(await executeTool(tools.two__echo, { text: 'yo' })).toEqual({ text: 'echo:yo' });
+
+    expect(service.hasTool('one__echo')).toBe(true);
+    expect(service.hasTool('two__echo')).toBe(true);
+    expect(service.hasTool('echo')).toBe(false);
+    expect(await service.callTool('one__echo', { text: 'hi' })).toMatchObject({
+      content: [{ type: 'text', text: 'echo:hi' }],
+    });
+    expect(await service.callTool('two__echo', { text: 'yo' })).toMatchObject({
+      content: [{ type: 'text', text: 'echo:yo' }],
+    });
 
     const instructions = service.getInstructions();
 
@@ -225,6 +249,7 @@ describe('McpService', () => {
     expect(service.getTools()).toEqual({});
     expect(service.getInstructions()).toBe('');
     expect(service.getDiagnostics()).toEqual([]);
+    expect(service.hasTool('echo')).toBe(false);
 
     await service.start(config);
 
@@ -239,6 +264,32 @@ describe('McpService', () => {
     await service.start(enabledConfig({ passive: stdioServer() }));
 
     expect(service.getTools().passive).toBe(passiveTool);
+  });
+
+  it('rejects raw calls when the client cannot call tools directly', async () => {
+    const tool = { description: 'Echo.', inputSchema: {}, execute: async () => ({}) } as unknown as Tool;
+    const service = createService({ createClient: async () => fakeClient({ echo: tool }) });
+
+    await service.start(enabledConfig({ fake: stdioServer() }));
+
+    expect(service.hasTool('echo')).toBe(true);
+    await expect(service.callTool('echo', { text: 'hi' })).rejects.toThrow(/does not support raw tool calls/);
+  });
+
+  it('rejects raw calls that exceed the timeout', async () => {
+    const tool = { description: 'Echo.', inputSchema: {}, execute: async () => ({}) } as unknown as Tool;
+    const service = createService({
+      callTimeoutMs: 10,
+      createClient: async () =>
+        fakeClient({ slow: tool }, undefined, () => new Promise<never>(() => {})),
+    });
+
+    await service.start(enabledConfig({ fake: stdioServer() }));
+
+    const startedAt = Date.now();
+
+    await expect(service.callTool('slow', {})).rejects.toThrow(/timed out after 10ms/);
+    expect(Date.now() - startedAt).toBeLessThan(1000);
   });
 
   it('rejects tool calls that exceed the timeout', async () => {

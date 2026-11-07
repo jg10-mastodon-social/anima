@@ -30,6 +30,7 @@ const STDIO_ENV_PREFIXES = ['LC_', 'XDG_'];
 export interface McpClientLike {
   readonly instructions?: string;
   tools(): Promise<Record<string, Tool>>;
+  callTool?(name: string, args: Record<string, unknown>): Promise<unknown>;
   close(): Promise<void>;
 }
 
@@ -45,8 +46,15 @@ export interface McpServiceOptions {
 
 interface StartedServer {
   server: string;
+  client: McpClientLike;
   tools: Record<string, Tool>;
   instructions?: string;
+}
+
+interface ToolSource {
+  server: string;
+  client: McpClientLike;
+  rawName: string;
 }
 
 export class McpService {
@@ -55,6 +63,7 @@ export class McpService {
   private readonly callTimeoutMs: number;
   private clients: McpClientLike[] = [];
   private tools: Record<string, Tool> = {};
+  private toolSources = new Map<string, ToolSource>();
   private instructions: string[] = [];
   private diagnostics: McpServerDiagnostic[] = [];
   private started = false;
@@ -88,7 +97,7 @@ export class McpService {
 
         const tools = await client.tools();
 
-        started.push({ server, tools, instructions: client.instructions });
+        started.push({ server, client, tools, instructions: client.instructions });
         this.diagnostics.push({ server, status: 'started', toolCount: Object.keys(tools).length });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -98,7 +107,10 @@ export class McpService {
       }
     }
 
-    this.tools = mergeTools(started, this.callTimeoutMs);
+    const merged = mergeTools(started, this.callTimeoutMs);
+
+    this.tools = merged.tools;
+    this.toolSources = merged.sources;
     this.instructions = started
       .filter(({ instructions }) => instructions !== undefined && instructions.trim() !== '')
       .map(({ server, instructions }) => `MCP server "${server}" instructions:\n${instructions}`);
@@ -106,6 +118,24 @@ export class McpService {
 
   getTools(): Record<string, Tool> {
     return this.tools;
+  }
+
+  hasTool(name: string): boolean {
+    return this.toolSources.has(name);
+  }
+
+  async callTool(name: string, input: Record<string, unknown> = {}): Promise<unknown> {
+    const source = this.toolSources.get(name);
+
+    if (!source) {
+      throw new Error(`MCP tool "${name}" is not available.`);
+    }
+
+    if (typeof source.client.callTool !== 'function') {
+      throw new Error(`MCP tool "${name}" does not support raw tool calls.`);
+    }
+
+    return withTimeout(source.client.callTool(source.rawName, input), this.callTimeoutMs);
   }
 
   getInstructions(): string {
@@ -121,6 +151,7 @@ export class McpService {
 
     this.clients = [];
     this.tools = {};
+    this.toolSources = new Map<string, ToolSource>();
     this.instructions = [];
     this.diagnostics = [];
     this.started = false;
@@ -165,21 +196,30 @@ async function createDefaultMcpClient(
   _server: string,
   config: McpServerConfig & { enabled: true },
 ): Promise<McpClientLike> {
-  if (config.type === 'stdio') {
-    return createMCPClient({
-      transport: new StdioClientTransport({
-        command: config.command,
-        args: config.args,
-        cwd: config.cwd,
-        env: buildStdioEnv(config.env),
-      }),
-    });
-  }
+  const client =
+    config.type === 'stdio'
+      ? await createMCPClient({
+          transport: new StdioClientTransport({
+            command: config.command,
+            args: config.args,
+            cwd: config.cwd,
+            env: buildStdioEnv(config.env),
+          }),
+        })
+      : await createMCPClient({ transport: { type: 'http', url: config.url, headers: config.headers } });
 
-  return createMCPClient({ transport: { type: 'http', url: config.url, headers: config.headers } });
+  return {
+    instructions: client.instructions,
+    tools: () => client.tools(),
+    callTool: (name, args) => client.callTool({ name, arguments: args }),
+    close: () => client.close(),
+  };
 }
 
-function mergeTools(servers: StartedServer[], callTimeoutMs: number): Record<string, Tool> {
+function mergeTools(
+  servers: StartedServer[],
+  callTimeoutMs: number,
+): { tools: Record<string, Tool>; sources: Map<string, ToolSource> } {
   const occurrences = new Map<string, number>();
 
   for (const { tools } of servers) {
@@ -188,17 +228,19 @@ function mergeTools(servers: StartedServer[], callTimeoutMs: number): Record<str
     }
   }
 
-  const merged: Record<string, Tool> = {};
+  const tools: Record<string, Tool> = {};
+  const sources = new Map<string, ToolSource>();
 
-  for (const { server, tools } of servers) {
-    for (const [name, tool] of Object.entries(tools)) {
+  for (const { server, client, tools: serverTools } of servers) {
+    for (const [name, tool] of Object.entries(serverTools)) {
       const exposedName = (occurrences.get(name) ?? 0) > 1 ? `${server}__${name}` : name;
 
-      merged[exposedName] = wrapTool(tool, callTimeoutMs);
+      tools[exposedName] = wrapTool(tool, callTimeoutMs);
+      sources.set(exposedName, { server, client, rawName: name });
     }
   }
 
-  return merged;
+  return { tools, sources };
 }
 
 function wrapTool(tool: Tool, callTimeoutMs: number): Tool {
