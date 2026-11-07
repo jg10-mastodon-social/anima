@@ -28,6 +28,8 @@ The full catalogue is exposed; there is no tool allowlist. MCP tools are availab
 
 If the Cairn daemon is not signed in, its tools return Cairn's `authentication_required` result until `cairn login` is run; the backend does not store or forward Solid credentials.
 
+When the backend runs inside proot on Android, proot's `$HOME` is `/root` while Cairn's broker descriptor lives in the Termux home. Start the backend with `CAIRN_HOME=/data/data/com.termux/files/home/.cairn`, or set `env.CAIRN_HOME` on the `cairn` server in `mcp.json`. Without it, the server still lists its tools, but authenticated calls return `authentication_required`.
+
 ## Endpoints
 
 ### Always Available
