@@ -106,10 +106,11 @@ Options:
   --out <path>           Result JSON path (default: evals/results/<id>-<timestamp>.json)
   --help                 Show this help
 
-Live mode needs ANIMA_SESSION_ID, or ~/.anima-dev/session.json with
-{ "sessionId": "..." }. The storage root is usually ~/.anima or ~/.anima-dev. If
-the backend runs inside proot, run this command inside proot or set
-ANIMA_STORAGE_ROOT.
+Live mode reads the session file the backend writes on login
+(~/.anima/session.json, or ~/.anima-dev/session.json in development). Run this
+command in the same environment as the backend. ANIMA_SESSION_ID overrides it.
+The storage root is usually ~/.anima or ~/.anima-dev. If the backend runs inside
+proot, run this command inside proot or set ANIMA_STORAGE_ROOT.
 `);
 }
 

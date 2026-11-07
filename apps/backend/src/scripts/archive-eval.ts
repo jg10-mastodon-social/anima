@@ -131,8 +131,9 @@ Options:
   --help                 Show this help
 
 Authentication:
-  Set ANIMA_SESSION_ID, or create ~/.anima-dev/session.json with { "sessionId": "..." }.
-  Get the session ID from localStorage["anima:sessionId"] in the app.
+  The backend writes ~/.anima/session.json (or ~/.anima-dev/session.json in
+  development) on login. Run this script in the same environment as the backend.
+  Set ANIMA_SESSION_ID to override it.
 `);
 }
 

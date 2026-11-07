@@ -24,11 +24,14 @@ failure recurs.
 - The backend must be running (`vp run dev:external`, or `vp run dev:managed` for a
   managed POD).
 - The browser must be logged in to Ànima.
-- The script needs a session ID in `ANIMA_SESSION_ID`, or in
-  `~/.anima-dev/session.json` as `{ "sessionId": "..." }`.
-  The user can copy it from `localStorage["anima:sessionId"]` in the app.
+- On login, the backend writes the session to `~/.anima/session.json` (or
+  `~/.anima-dev/session.json` in development) with `0600` permissions. The CLI
+  reads it automatically. Run the command inside the backend environment so it
+  can see the same home directory.
+- `ANIMA_SESSION_ID` overrides the file if needed.
 
-Never write the session ID into a case file, report, commit, or chat message.
+Never write the session ID or the session file contents into a case file,
+report, commit, or chat message.
 
 ## Workflow
 
@@ -129,8 +132,8 @@ Prefer live mode, which runs against the backend with the real POD tools:
 vp run evals:run -- --case evals/cases/<id>.json --live
 ```
 
-Live mode needs `ANIMA_SESSION_ID` from the app. The backend must be running with
-`EVALS=true` if it is not in development mode.
+Live mode reads the session file written on login. The backend must be running
+with `EVALS=true` if it is not in development mode.
 
 Local mode is available for quick text-only checks:
 

@@ -83,8 +83,11 @@ Local mode reads provider/model configuration from `~/.anima` or
 `~/.anima-dev`. If the backend runs inside proot, run the command inside proot or
 set `ANIMA_STORAGE_ROOT`.
 
-Live mode needs `ANIMA_SESSION_ID` from the app. Start the backend with
-`EVALS=true` if it is not in development mode.
+On login, the backend writes the session to `~/.anima/session.json` (or
+`~/.anima-dev/session.json` in development) with `0600` permissions. Live mode
+reads it automatically; run the command in the same environment as the backend.
+`ANIMA_SESSION_ID` overrides it if needed. Start the backend with `EVALS=true` if
+it is not in development mode.
 
 Results are written to `evals/results/`.
 

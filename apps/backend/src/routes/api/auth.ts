@@ -2,6 +2,7 @@ import type { SolidUserProfile } from '@noeldemartin/solid-utils';
 import { Elysia, status } from 'elysia';
 import z from 'zod';
 
+import { clearDevSession, persistDevSession } from '../../lib/devSession';
 import { SolidServerError } from '../../lib/errors/SolidServerError';
 import Auth from '../../services/Auth';
 import SolidServer, { CreateAccountOptionsSchema } from '../../services/SolidServer';
@@ -31,6 +32,8 @@ export default new Elysia({ prefix: '/auth' })
       if (!session) {
         return null;
       }
+
+      await persistDevSession(session.sessionId, session.user.webId);
 
       return { user: session.user };
     },
@@ -66,7 +69,13 @@ export default new Elysia({ prefix: '/auth' })
     { body: CreateAccountOptionsSchema },
   )
   .post('/logout', async ({ request, set }) => {
+    const sessionId = request.headers.get('X-Anima-Session-Id');
+
     await Auth.logout(request);
+
+    if (sessionId) {
+      await clearDevSession(sessionId);
+    }
 
     if (SolidServer.isEnabled()) {
       set.headers['set-cookie'] = SolidServer.expiredPodSessionCookie();
