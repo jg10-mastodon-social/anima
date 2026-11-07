@@ -1,13 +1,12 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 import { EVENTS, Session } from '@inrupt/solid-client-authn-node';
-import type { AuthorizationRequestState } from '@inrupt/solid-client-authn-node';
 import { fetchLoginUserProfile, type SolidUserProfile } from '@noeldemartin/solid-utils';
 import { facade, isDevelopment, PromisedValue, uuid } from '@noeldemartin/utils';
 import { status } from 'elysia';
 import { runWithEngine, SolidEngine } from 'soukai-bis';
 
-import { BACKEND_URL, CLIENT_ID } from '../lib/constants';
+import { BACKEND_URL } from '../lib/constants';
 import SolidServer, { type LoginOptions, type SolidCredentials } from './SolidServer';
 
 const SESSION_HEADER = 'X-Anima-Session-Id';
@@ -24,10 +23,6 @@ function sessionWebId(session: ActiveSession): string | undefined {
   return isManagedSession(session) ? session.credentials.webId : session.instance.info.webId;
 }
 
-function isAuthorizationRequestState(value: unknown): value is AuthorizationRequestState {
-  return typeof value === 'object' && value !== null && 'state' in value;
-}
-
 export interface ManagedSession {
   credentials: SolidCredentials;
   instance: Session;
@@ -35,6 +30,11 @@ export interface ManagedSession {
 
 export interface OidcSession {
   instance: Session;
+}
+
+export interface PendingOidcSession {
+  instance: Session;
+  state: string;
 }
 
 export type ActiveSession = ManagedSession | OidcSession;
@@ -49,7 +49,8 @@ export interface AuthSession {
 export class AuthService {
   private context = new AsyncLocalStorage<AuthSession>();
   private profiles: Record<string, SolidUserProfile | null> = {};
-  private sessions: Record<string, AuthorizationRequestState | ActiveSession> = {};
+  private sessions: Record<string, ActiveSession> = {};
+  private pendingOidcSessions: Record<string, PendingOidcSession> = {};
   private managedLogin: Promise<unknown> = Promise.resolve();
 
   public async assertLoggedIn(request: Request): Promise<void> {
@@ -184,18 +185,22 @@ export class AuthService {
     const session = new Session({ keepAlive: false });
     const promisedResult = new PromisedValue<{ redirectUrl: string } | { error: string }>();
 
-    session.events.on(EVENTS.AUTHORIZATION_REQUEST, (authorizationRequestState) => {
-      this.sessions[session.info.sessionId] = authorizationRequestState;
+    session.events.on(EVENTS.AUTHORIZATION_REQUEST, ({ state }) => {
+      this.pendingOidcSessions[session.info.sessionId] = { instance: session, state };
     });
 
     session.events.on(EVENTS.ERROR, (error) => {
+      delete this.pendingOidcSessions[session.info.sessionId];
+
       promisedResult.resolve({ error: error ?? 'Unknown error' });
     });
 
     await session
       .login({
         oidcIssuer,
-        clientId: CLIENT_ID,
+        // Omit the client ID so it's registered dynamically with the identity provider. A static
+        // client ID document isn't reachable from external PODs when Ànima runs locally (#3).
+        clientName: 'Ànima',
         redirectUrl: `${BACKEND_URL}/oidc/redirect`,
         handleRedirect: (redirectUrl) => promisedResult.resolve({ redirectUrl }),
       })
@@ -213,36 +218,29 @@ export class AuthService {
       return { sessionId: session.info.sessionId, redirectUrl: result.redirectUrl };
     }
 
+    delete this.pendingOidcSessions[session.info.sessionId];
+
     throw new Error(result.error);
   }
 
   public async handleRedirect(request: Request): Promise<void> {
     const url = new URL(request.url);
     const state = url.searchParams.get('state');
-    const [sessionId, authorizationRequestState] = (() => {
-      for (const [sessionId, authorizationRequestState] of Object.entries(this.sessions)) {
-        if (!isAuthorizationRequestState(authorizationRequestState) || authorizationRequestState.state !== state) {
-          continue;
-        }
+    const entry = Object.entries(this.pendingOidcSessions).find(([, pendingSession]) => pendingSession.state === state);
 
-        return [sessionId, authorizationRequestState];
-      }
-
-      return [];
-    })();
-
-    const session =
-      sessionId &&
-      authorizationRequestState &&
-      (await Session.fromAuthorizationRequestState(authorizationRequestState, sessionId));
-
-    if (!session) {
+    if (!entry) {
       if (isDevelopment()) {
-        console.error('Failed to handle redirect', { sessionId, authorizationRequestState });
+        console.error('Failed to handle redirect', { state });
       }
 
       return;
     }
+
+    const [sessionId, pendingSession] = entry;
+
+    delete this.pendingOidcSessions[sessionId];
+
+    const session = pendingSession.instance;
 
     await session.handleIncomingRedirect(request.url);
 
