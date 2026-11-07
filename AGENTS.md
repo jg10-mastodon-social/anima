@@ -13,11 +13,11 @@ This repository contains the monorepo for Ànima, a personal AI assistant built 
 ## Architecture
 
 - **Frontend modes**:
-  - _Default mode_: Communicates with `@anima/backend` for LLM orchestration and Solid operations.
-  - _SPA mode_ (`VITE_SPA_MODE=true`): Runs entirely client-side in the browser without requiring a backend.
+  - _Default mode_: Communicates with `@anima/backend` for LLM orchestration and Solid operations. Solid requests are proxied by the backend (`POST /api/auth/proxy`), so the browser never contacts the POD directly and POD CORS settings don't apply. `VITE_MANAGED_POD=true` only selects the managed login UI (email/password); it still requires `MANAGED_POD=true` on the backend.
+  - _SPA mode_ (`VITE_SPA_MODE=true`): Runs entirely client-side in the browser without requiring a backend. It authenticates and fetches the POD directly from the browser, so the POD must allow browser CORS.
 - **Backend modes**:
-  - _Default mode_: Connects to an external Solid POD server provided by the user.
-  - _Managed POD_ (`MANAGED_POD=true` / `VITE_MANAGED_POD=true`): Backend runs an internal Community Solid Server (CSS) instance providing a local managed POD for the user.
+  - _Default mode_: Connects to an external Solid POD server provided by the user. No CSS instance is started.
+  - _Managed POD_ (`MANAGED_POD=true`): Backend runs an internal Community Solid Server (CSS) instance providing a local managed POD for the user. Only the backend starts CSS.
 - **Frontend serving & API URL**:
   - _Development_: The frontend runs on its own dev server (e.g. `http://localhost:5173`) and makes requests to an external API URL (`http://localhost:1191`).
   - _Production / Bundled_: The backend serves the built frontend statically from the same URL/origin (`http://localhost:1191`), avoiding CORS issues.
@@ -36,6 +36,10 @@ These are the following commands to work with the monorepo:
 - `vp run dev`: Launches the backend, frontend, and a local Solid POD server for development. The application can be used in `http://localhost:5173`.
 - `vp run e2e:serve`: Launches the services to be used in the E2E environment (mocks some dependencies like AI models).
 - `vp run e2e`: Runs Playwright tests (install dependencies first with `vp run e2e#install-deps`).
+
+## Dependency patches
+
+Patches in `patches/` are applied with `pnpm`. Each patch is tied to a package version, so a patched dependency must be pinned (for example in the `catalog` of `pnpm-workspace.yaml`) rather than tracking `next`; a moving tag would resolve to an unpatched release and fail the install.
 
 ## Instructions
 
