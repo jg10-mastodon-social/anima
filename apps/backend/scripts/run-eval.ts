@@ -11,6 +11,7 @@ import {
   AnimaEvalCaseSchema,
   AnthropicModelsProviderFactory,
   evalPassed,
+  getAIErrorMessage,
   GoogleModelsProviderFactory,
   InstalledModelSchema,
   judgeEval,
@@ -427,29 +428,35 @@ async function runCase(caseData: AnimaEvalCase, live: boolean): Promise<EvalRunO
   );
   console.log('\nRunning candidate...\n');
 
-  const result = proxyFetch
-    ? await runWithEngine(new SolidEngine({ fetch: proxyFetch }), () =>
-        generateText({
-          model: languageModel.languageModel,
-          providerOptions: languageModel.providerOptions,
-          system: prompt.text,
-          messages,
-          tools,
-          activeTools: caseData.supportsTools ? objectKeys(tools) : [],
-          stopWhen: stepCountIs(10),
-          temperature: 0,
-        }),
-      )
-    : await generateText({
-        model: languageModel.languageModel,
-        providerOptions: languageModel.providerOptions,
-        system: prompt.text,
-        messages,
-        tools,
-        activeTools: [],
-        stopWhen: stepCountIs(2),
-        temperature: 0,
-      });
+  const result = await (async () => {
+    try {
+      return proxyFetch
+        ? await runWithEngine(new SolidEngine({ fetch: proxyFetch }), () =>
+            generateText({
+              model: languageModel.languageModel,
+              providerOptions: languageModel.providerOptions,
+              system: prompt.text,
+              messages,
+              tools,
+              activeTools: caseData.supportsTools ? objectKeys(tools) : [],
+              stopWhen: stepCountIs(10),
+              temperature: 0,
+            }),
+          )
+        : await generateText({
+            model: languageModel.languageModel,
+            providerOptions: languageModel.providerOptions,
+            system: prompt.text,
+            messages,
+            tools,
+            activeTools: [],
+            stopWhen: stepCountIs(2),
+            temperature: 0,
+          });
+    } catch (error) {
+      fail(`Candidate generation failed: ${getAIErrorMessage(error)}`);
+    }
+  })();
 
   if (flags.debug) {
     console.log('--- Debug ---\n');
@@ -492,12 +499,18 @@ async function runCase(caseData: AnimaEvalCase, live: boolean): Promise<EvalRunO
     judgeModel.id === model.id
       ? languageModel
       : await createFactory(judgeProvider.type).createLanguageModel(judgeProvider, judgeModel.name);
-  const judge = await judgeEval({
-    model: judgeLanguageModel.languageModel,
-    providerOptions: judgeLanguageModel.providerOptions,
-    caseData,
-    candidate,
-  });
+  const judge = await (async () => {
+    try {
+      return await judgeEval({
+        model: judgeLanguageModel.languageModel,
+        providerOptions: judgeLanguageModel.providerOptions,
+        caseData,
+        candidate,
+      });
+    } catch (error) {
+      fail(`Judge failed: ${getAIErrorMessage(error)}`);
+    }
+  })();
   const checks = runEvalChecks(caseData.checks, candidate);
 
   return {
