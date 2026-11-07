@@ -10,11 +10,13 @@
     "evals:run": "tsx scripts/run-eval.ts"
   },
   "dependencies": {
+    "@ai-sdk/mcp": "2.0.91",
     "@anima/core": "workspace:*",
     "@elysia/static": "^1.4.11",
     "@elysiajs/cors": "^1.4.1",
     "@elysiajs/node": "^1.4.5",
     "@inrupt/solid-client-authn-node": "^3.1.1",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@noeldemartin/solid-utils": "catalog:",
     "@noeldemartin/utils": "catalog:",
     "@sinclair/typebox": "^0.34.0",

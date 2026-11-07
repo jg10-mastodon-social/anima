@@ -12,11 +12,11 @@
     "type-check": "vue-tsc --build --force"
   },
   "dependencies": {
-    "@aerogel/core": "next",
-    "@aerogel/plugin-i18n": "next",
-    "@aerogel/plugin-routing": "next",
-    "@aerogel/plugin-solid": "next",
-    "@aerogel/plugin-soukai": "next",
+    "@aerogel/core": "0.1.2-next.34b4f4b9a9ec23f37fcc36f1242544b81f866fe3",
+    "@aerogel/plugin-i18n": "0.1.2-next.81f8519155f204f6cb74ec6de2cda8276f218ac4",
+    "@aerogel/plugin-routing": "0.1.2-next.aef0d682e604b6576d5b8a88228a5ab5a933d4e3",
+    "@aerogel/plugin-solid": "0.1.2-next.9dab1744392e926ae61306cc62afa7b84eed3c9c",
+    "@aerogel/plugin-soukai": "0.1.2-next.28d4b8f57de3257127f60b9dcde54d21834961e5",
     "@ai-sdk/provider": "^4.0.17",
     "@anima/core": "workspace:*",
     "@browser-ai/core": "^3.0.3",
@@ -34,8 +34,8 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@aerogel/cli": "next",
-    "@aerogel/vite": "next",
+    "@aerogel/cli": "0.1.2-next.1d1b3cdc38f4b5a12f7a2d0e631ed1229a25c34c",
+    "@aerogel/vite": "0.1.2-next.1d1b3cdc38f4b5a12f7a2d0e631ed1229a25c34c",
     "@anima/config": "workspace:*",
     "@iconify/json": "^2.2.440",
     "@noeldemartin/scripts": "^0.3.0",

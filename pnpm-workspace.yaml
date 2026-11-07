@@ -10,8 +10,8 @@ allowBuilds:
   vue-demi: true
 
 catalog:
-  '@noeldemartin/solid-utils': next
-  '@noeldemartin/utils': next
+  '@noeldemartin/solid-utils': 0.6.1-next.578b41be4a53c59db770a55bf505f58574afd7e0
+  '@noeldemartin/utils': 0.7.3-next.9b27cd7a7cb7b19a570093ac5a656ad6cf197066
   '@solid/community-server': ^7.2.0
   '@tailwindcss/vite': ^4.1.18
   '@vitejs/plugin-vue': ^6.0.4
@@ -19,8 +19,8 @@ catalog:
   soukai-bis: 0.0.0-next.8084c9222458428ddf89e67d7ba9298b2908f275
   tailwindcss: ^4.1.18
   typescript: ~5.9.3
-  vite: npm:@voidzero-dev/vite-plus-core@latest
-  vite-plus: latest
+  vite: npm:@voidzero-dev/vite-plus-core@1.0.0
+  vite-plus: 1.0.0
   vitest: latest
   vue: ^3.5.28
   vue-tsc: ^3.3.11
@@ -35,6 +35,11 @@ minimumReleaseAgeExclude:
   - vite-plus
 
 overrides:
+  '@ai-sdk/provider': 4.0.36
+  '@ai-sdk/provider-utils': 5.0.75
+  '@noeldemartin/solid-utils': 0.6.1-next.578b41be4a53c59db770a55bf505f58574afd7e0
+  '@noeldemartin/utils': 0.7.3-next.9b27cd7a7cb7b19a570093ac5a656ad6cf197066
+  'soukai-bis': 0.0.0-next.8084c9222458428ddf89e67d7ba9298b2908f275
   '@vue/compat': beta
   '@vue/compiler-core': beta
   '@vue/compiler-dom': beta
