@@ -1,4 +1,4 @@
-import '../lib/soukai-bis';
+import '../src/lib/soukai-bis';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -56,6 +56,7 @@ const { values: flags } = parseArgs({
     'prompt-append-file': { type: 'string' },
     backend: { type: 'string' },
     live: { type: 'boolean' },
+    debug: { type: 'boolean' },
     out: { type: 'string' },
     help: { type: 'boolean' },
   },
@@ -336,10 +337,22 @@ function createProxyFetch(sessionId: string): AuthProvider['fetch'] {
   }) as AuthProvider['fetch'];
 }
 
-function extractCandidate(result: { text: string; steps: readonly { text: string }[] }): string {
-  const stepTexts = result.steps.map((step) => step.text.trim()).filter(Boolean);
+function extractCandidate(result: {
+  content: readonly { type: string; text?: string }[];
+  text: string;
+  steps: readonly { text: string }[];
+}): string {
+  const contentText = result.content
+    .filter((part) => part.type === 'text')
+    .map((part) => part.text?.trim() ?? '')
+    .filter(Boolean)
+    .join('\n\n');
+  const stepText = result.steps
+    .map((step) => step.text.trim())
+    .filter(Boolean)
+    .join('\n\n');
 
-  return (stepTexts.length > 0 ? stepTexts.join('\n\n') : result.text).trim();
+  return (contentText || stepText || result.text).trim();
 }
 
 function buildPrompt(
@@ -438,6 +451,35 @@ async function runCase(caseData: AnimaEvalCase, live: boolean): Promise<EvalRunO
         temperature: 0,
       });
 
+  if (flags.debug) {
+    console.log('--- Debug ---\n');
+    console.log(
+      JSON.stringify(
+        {
+          content: result.content.map((part) => ({
+            type: part.type,
+            textLength: 'text' in part && typeof part.text === 'string' ? part.text.length : undefined,
+          })),
+          steps: result.steps.map((step) => ({
+            textLength: step.text.length,
+            contentLength: step.content.length,
+            finishReason: step.finishReason,
+            toolCalls: step.toolCalls.length,
+          })),
+          responseMessages: result.responseMessages.map((message) => ({
+            role: message.role,
+            content: Array.isArray(message.content) ? message.content.map((part) => part.type) : typeof message.content,
+          })),
+          textLength: result.text.length,
+          finishReason: result.finishReason,
+        },
+        null,
+        2,
+      ),
+    );
+    console.log();
+  }
+
   const candidate = extractCandidate(result);
 
   console.log('--- Candidate ---\n');
@@ -486,7 +528,7 @@ async function main(): Promise<void> {
   const casePath = resolve(process.cwd(), flags.case);
   const caseData: AnimaEvalCase = AnimaEvalCaseSchema.parse(JSON.parse(readFileSync(casePath, 'utf8')));
   const output = await runCase(caseData, flags.live === true);
-  const resultsDirectory = resolve(import.meta.dirname, '../../../../evals/results');
+  const resultsDirectory = resolve(import.meta.dirname, '../../../evals/results');
   const outPath = flags.out
     ? resolve(process.cwd(), flags.out)
     : join(resultsDirectory, `${caseData.id}-${output.createdAt.replace(/[:.]/g, '-')}.json`);

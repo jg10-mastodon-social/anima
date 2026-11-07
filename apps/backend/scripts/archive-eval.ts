@@ -479,7 +479,7 @@ function splitTags(tags: string[] | undefined): string[] {
 function getCasesDirectory(): string {
   return process.env.EVALS_CASES_DIR
     ? resolve(process.cwd(), process.env.EVALS_CASES_DIR)
-    : resolve(import.meta.dirname, '../../../../evals/cases');
+    : resolve(import.meta.dirname, '../../../evals/cases');
 }
 
 function isInside(parent: string, child: string): boolean {

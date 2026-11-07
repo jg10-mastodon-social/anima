@@ -6,8 +6,8 @@
     "build": "vp build",
     "dev:external": "NODE_ENV=development tsx --watch src/index.ts",
     "dev:managed": "NODE_ENV=development MANAGED_POD=true tsx --watch src/index.ts",
-    "evals:archive": "tsx src/scripts/archive-eval.ts",
-    "evals:run": "tsx src/scripts/run-eval.ts"
+    "evals:archive": "tsx scripts/archive-eval.ts",
+    "evals:run": "tsx scripts/run-eval.ts"
   },
   "dependencies": {
     "@anima/core": "workspace:*",
