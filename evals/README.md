@@ -89,6 +89,9 @@ reads it automatically; run the command in the same environment as the backend.
 `ANIMA_SESSION_ID` overrides it if needed. Start the backend with `EVALS=true` if
 it is not in development mode.
 
+The production backend does not watch files, so restart it after changing the
+system prompt (`packages/core/src/prompts/system.ts`) or any code.
+
 Results are written to `evals/results/`.
 
 Local mode is text-only and is useful for tone/scope/grounding checks; live mode
