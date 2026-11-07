@@ -2,6 +2,7 @@ import { constants } from 'node:os';
 
 import type Elysia from 'elysia';
 
+import { closeMcpServers } from '../services/mcp';
 import SolidServer from '../services/SolidServer';
 
 const SHUTDOWN_SIGNALS = ['SIGINT', 'SIGTERM'] as const;
@@ -24,7 +25,8 @@ export function shutdownOnSignals(app: Elysia): void {
 
       try {
         await app.stop().catch(() => undefined);
-        await SolidServer.stop();
+        await SolidServer.stop().catch(() => undefined);
+        await closeMcpServers().catch(() => undefined);
       } finally {
         process.exit(signalExitCode(signal));
       }

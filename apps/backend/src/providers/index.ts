@@ -12,12 +12,15 @@ import {
 } from '@anima/core';
 
 import { env } from '../lib/env';
+import { initializeMcpServers } from '../services/mcp';
 import FilesystemModelsStorageProvider from './FilesystemModelsStorageProvider';
 import InMemoryModelsStorageProvider from './InMemoryModelsStorageProvider';
 import SessionAuthProvider from './SessionAuthProvider';
 
 export async function registerProviders() {
   setAuthProvider(new SessionAuthProvider());
+
+  await initializeMcpServers();
 
   if (env('E2E')) {
     ModelsManager.setStorageProvider(new InMemoryModelsStorageProvider());
