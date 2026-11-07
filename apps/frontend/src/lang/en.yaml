@@ -69,6 +69,7 @@ chat:
     streaming: Thinking...
     done: Thought process
   tools:
+    dynamicTool: 'Tool: {name}'
     readTypeIndex: Read type index
     listContainerFiles: Listed files from {url}
     readFileContents: Read {url}

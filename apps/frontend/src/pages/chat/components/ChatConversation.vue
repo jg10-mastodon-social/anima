@@ -50,6 +50,11 @@
               "
               :part
             />
+            <ChatPartTool
+              v-else-if="isDynamicToolUIPart(part)"
+              :label="$t('chat.tools.dynamicTool', { name: (part as DynamicToolUIPart).toolName })"
+              :part
+            />
             <ChatPartReasoning v-else-if="part.type === 'reasoning'" :part />
             <ChatPartDataError v-else-if="part.type === 'data-error'" :part />
             <ChatPartUnsupported v-else-if="part.type !== 'step-start'" :part />
@@ -109,7 +114,7 @@ import { translate, useForm } from '@aerogel/core';
 import { Router } from '@aerogel/plugin-routing';
 import { type AnimaTools, type ModelId, type AnimaChatRecord, isDataErrorPart } from '@anima/core';
 import { arraySorted } from '@noeldemartin/utils';
-import type { UIToolInvocation } from 'ai';
+import { isDynamicToolUIPart, type DynamicToolUIPart, type UIToolInvocation } from 'ai';
 import { computed, nextTick, useTemplateRef, watch } from 'vue';
 import { z } from 'zod';
 

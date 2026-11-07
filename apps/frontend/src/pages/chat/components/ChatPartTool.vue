@@ -16,7 +16,11 @@
 </template>
 
 <script setup lang="ts">
-import type { UIToolInvocation } from 'ai';
+type DisplayToolPart = {
+  state: string;
+  output?: unknown;
+  errorText?: string;
+};
 
-defineProps<{ label: string; part: UIToolInvocation<any> }>();
+defineProps<{ label: string; part: DisplayToolPart }>();
 </script>
