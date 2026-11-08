@@ -26,7 +26,7 @@
             </span>
           </div>
           <template v-for="part in message.parts">
-            <ChatPartText v-if="part.type === 'text'" :part />
+            <ChatPartText v-if="part.type === 'text'" :part :role="message.role" />
             <ChatPartTool
               v-else-if="part.type === 'tool-readTypesIndex'"
               :label="$t('chat.tools.readTypeIndex')"

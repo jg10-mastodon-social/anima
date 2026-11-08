@@ -1,5 +1,5 @@
 import type { MessagePart } from '@anima/core';
-import { auth, Chat, Message, type AnimaUIMessage } from '@anima/core';
+import { auth, Chat, Message, sanitizeAssistantText, type AnimaUIMessage } from '@anima/core';
 import { facade, Semaphore, tap, uuid } from '@noeldemartin/utils';
 import { isToolUIPart } from 'ai';
 import { Person, Container, TypeIndex, type GetModelAttributes } from 'soukai-bis';
@@ -82,7 +82,7 @@ export class ChatsManagerService {
 
       let count = 0;
       for (const part of message.parts) {
-        const attributes = this.toMessagePartAttributes(part);
+        const attributes = this.toMessagePartAttributes(part, message.role);
 
         if (!attributes) {
           continue;
@@ -134,11 +134,12 @@ export class ChatsManagerService {
 
   private toAnimaMessage(message: Message): AnimaUIMessage {
     const user = auth().getUser();
+    const role: AnimaUIMessage['role'] = message.author === user.webId ? 'user' : 'assistant';
 
     return {
       id: message.url as AnimaUIMessage['id'],
-      role: message.author === user.webId ? 'user' : 'assistant',
-      parts: message.parts?.map((part) => this.toAnimaMessagePart(part)) ?? [],
+      role,
+      parts: message.parts?.map((part) => this.toAnimaMessagePart(part, role)) ?? [],
       metadata: {
         model: message.model,
         provider: message.provider,
@@ -147,11 +148,11 @@ export class ChatsManagerService {
     };
   }
 
-  private toAnimaMessagePart(part: MessagePart): AnimaUIMessage['parts'][number] {
+  private toAnimaMessagePart(part: MessagePart, role: AnimaUIMessage['role']): AnimaUIMessage['parts'][number] {
     if (part.text) {
       return {
         type: 'text',
-        text: part.text,
+        text: role === 'assistant' ? sanitizeAssistantText(part.text) : part.text,
       };
     }
 
@@ -178,14 +179,18 @@ export class ChatsManagerService {
 
   private toMessagePartAttributes(
     part: AnimaUIMessage['parts'][number],
+    role: AnimaUIMessage['role'],
   ): Omit<GetModelAttributes<MessagePart>, 'position'> | null {
     if (isToolUIPart(part)) {
       return { toolCall: JSON.stringify(part) };
     }
 
     switch (part.type) {
-      case 'text':
-        return part.text.trim().length === 0 ? null : { text: part.text };
+      case 'text': {
+        const text = role === 'assistant' ? sanitizeAssistantText(part.text) : part.text;
+
+        return text.trim().length === 0 ? null : { text };
+      }
       case 'step-start':
         return null;
       case 'reasoning':
