@@ -7,12 +7,18 @@ import z from 'zod';
 const TypesIndexSchema = z.array(
   z.object({
     dataType: z.string().describe('The type of data being indexed, expressed as an RDF type.'),
-    url: z.string().describe('The location of the data being indexed, expressed as the container url.'),
+    url: z.string().describe('The location of the data being indexed: a container url, or a single document url.'),
+    kind: z
+      .enum(['container', 'instance'])
+      .describe(
+        'Whether url is a container (list it with listContainerFiles) or a single resource (read it with readFileContents).',
+      ),
   }),
 );
 
 export default tool({
-  description: "Get and index of the user's data, including their locations and types.",
+  description:
+    "Get an index of the user's data, including their locations and types. Each entry is either a container to list or a single resource to read.",
   inputSchema: z.object({}),
   outputSchema: TypesIndexSchema,
   strict: true,
@@ -29,14 +35,19 @@ export default tool({
 
     for (const typeIndex of typeIndexes) {
       for (const registration of typeIndex?.registrations ?? []) {
-        if (!registration.instanceContainer) {
+        const instanceContainer = registration.instanceContainer;
+        const instance = registration.instance;
+        const url = instanceContainer ?? instance;
+
+        if (!url) {
           continue;
         }
 
         for (const forClass of registration.forClass) {
           index.push({
             dataType: forClass.toString(),
-            url: registration.instanceContainer,
+            url,
+            kind: instanceContainer ? 'container' : 'instance',
           });
         }
       }
