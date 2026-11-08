@@ -62,6 +62,7 @@ This is a personal fork of [NoelDeMartin/anima](https://github.com/NoelDeMartin/
 - System prompt v3 adds strict grounding rules ("I couldn't find X" instead of claiming data is absent), filename assumptions, scope and voice/tone guidance.
 - The agent loop has a step budget (`AGENT_MAX_STEPS`) that disables tools on the final step and asks the model to answer with what it has.
 - `readFileContents` also reads Markdown and CSV files.
+- `readTypesIndex` reports single-instance registrations (`solid:instance`) alongside containers (`solid:instanceContainer`), tagging each entry `kind: "container" | "instance"` so the agent lists containers and reads individual resources.
 
 ### Authentication and providers
 
